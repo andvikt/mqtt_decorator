@@ -1,13 +1,15 @@
 from config import mqtt, Client
-from smarthome.bindings.mqtt import bind_mqtt
+from smarthome.bindings.mqtt import MqttBinding
 from smarthome import *
 from threading import Thread
 from threading import Lock
 import re
 
+mqtt_binding = MqttBinding(mqtt)
+
 class MainApp(App):
 
-    test_switch = bind_mqtt(Switch)
+    test_switch = Switch(bindings=[mqtt_binding])
 
 app = MainApp()
 

@@ -1,15 +1,20 @@
-from .. import *
-
-from config import mqtt
+from .binding import Binding
 from typing import TypeVar
+from smarthome import Thing
+from mqtt_decorator.decorator import Client
+from logging import getLogger
+
+logger = getLogger('mqtt_binding')
 
 _T = TypeVar('_T')
 
 
-async def push(item: Thing):
-    print('push new state', f'/{item.root}/{item.name}/push', item.as_json())
-    mqtt.publish(f'/{item.root}/{item.name}/push', item.as_json())
+class MqttBinding(Binding):
+
+    def __init__(self, mqtt: Client):
+        self.mqtt = mqtt
 
 
-def bind_mqtt(item: _T) -> _T:
-    return bind(item, push)
+    async def push(self, thing: Thing):
+        logger.debug(f'push {thing}')
+        self.mqtt.publish(f'/{thing.root}/{thing.name}/push', thing.as_json())
