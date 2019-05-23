@@ -5,6 +5,7 @@ from smarthome import Thing
 from mqtt_decorator.decorator import Client
 from logging import getLogger
 from threading import Lock, Thread
+from queue import Queue
 
 import re
 import asyncio
@@ -17,43 +18,49 @@ THING_ID = 'thing_id'
 
 DEF_OUT_TOPIC = '/{app_name}/{thing_id}/out'
 DEF_IN_TOPIC = '/{app_name}/{thing_id}/in'
-DEF_SUBSCRIBE_TOPIC = '#/in'
+DEF_SUBSCRIBE_TOPIC = '/{app_name}/+/in'
 
 
 class MqttBinding(Binding):
     """
     MQTT Client runs in a separate thread, pushes recieved data to the main thread that processes it in async-fashion
     """
+    eho_safe = True
+
     def __init__(self
                  , mqtt: Client
-                 , root_topic='#'
+                 , subscribe_topic=DEF_SUBSCRIBE_TOPIC
                  , in_topic: str = DEF_IN_TOPIC
                  , out_topic: str = DEF_OUT_TOPIC
                  , data_handler: Callable = None
                  ):
         self.mqtt = mqtt
-        self.root_topic = root_topic
+        self.root_topic = subscribe_topic
         self.in_topic = DEF_IN_TOPIC
         self.out_topic = DEF_OUT_TOPIC
         self.data_handler = data_handler
         self.data_lock = Lock()
-        self.data_que = asyncio.queues.Queue
+        self.msg_que = Queue()
 
     @property
     def parse_topic(self):
-        return re.compile(self.in_topic.format(app_name = self.app.name, thing_id = rf'(?P<{THING_ID}>)'), re.IGNORECASE)
+        return re.compile(self.in_topic.format(app_name = self.app.name, thing_id = rf'(?P<{THING_ID}>.*)'), re.IGNORECASE)
 
-    async def push(self, thing: Thing):
+    @property
+    def subs_topic(self):
+        return self.root_topic.format(app_name = self.app.name)
+
+    def push(self, thing: Thing):
         logger.debug(f'push {thing}')
-        self.mqtt.publish(f'/{thing.root}/{thing.name}/push', thing.as_json())
+        self.mqtt.publish(DEF_OUT_TOPIC.format(app_name=self.app.name, thing_id=thing.unique_id), thing.as_json())
 
     def start(self):
         mqtt_connected = Lock()
         mqtt_connected.acquire()
         def release(*args):
             mqtt_connected.release()
-            self.mqtt.subscribe(self.root_topic)
-            logger.info(f'mqtt connected, subscribe to {self.root_topic}')
+            logger.info(f'mqtt connected, subscribe to {self.subs_topic}')
+            self.mqtt.subscribe(self.subs_topic)
 
         def disconnect(*args):
             logger.warning('disconnected, try to reconnect')

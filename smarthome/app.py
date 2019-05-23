@@ -55,6 +55,10 @@ class App(object):
 
     async def _start(self):
         for x in self.get_things():
+            x._app = self
+        for x in self.get_bindings():
+            x._app = self
+        for x in self.get_things():
             x.start_bindings()
         await asyncio.gather(*[x._start() for x in self.get_bindings()])
         logger.info(f'{self} started!')

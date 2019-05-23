@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import TypeVar, cast
+from typing import TypeVar, cast, List, Tuple, Callable, Any
 from logging import getLogger
 from threading import Lock as ThreadLock
 import functools
@@ -33,7 +33,6 @@ class state(object):
             return
         logger.debug(f'set {instance}.{self.name} to {value}')
         setattr(instance, f'_{self.name}', value)
-        asyncio.ensure_future(instance.push())
 
     def __str__(self):
         return f'<state> {self.owner}.{self.name}'
@@ -53,17 +52,24 @@ class Thing(object, metaclass=ThingMeta):
 
     def __new__(cls, *args, **kwargs):
         from .app import App
+        from .bindings.binding import Binding
         obj = object.__new__(cls)
-        obj.push_callbacks = []
-        obj.request_callbacks = []
+        obj.push_bindings: List[Binding] = []
+        obj.request_bindings: List[Binding] = []
         obj.data_lock = asyncio.Lock()
         obj.thread_lock = ThreadLock()
         obj.que = asyncio.Queue()
-        obj.app: App = None
+        obj._app: App = None
         obj._init_args = args
         obj._init_kwargs = kwargs
-        obj._bindings = []
+        obj._bindings: List[Binding] = []
         return obj
+
+    @property
+    def app(self):
+        if self._app is None:
+            raise RuntimeError('app is not set for')
+        return self._app
 
     def bind(self, binding: _T, *args, **kwargs):
         self._bindings.append((binding, args, kwargs))
@@ -103,31 +109,35 @@ class Thing(object, metaclass=ThingMeta):
         return f'{self.root}.{self.name}'
 
     def __get__(self, instance, owner):
-        self.app = instance
         return self
 
-    async def push(self):
+    async def push(self, from_binding=None):
         logger.debug(f'{self} begin push')
-        await asyncio.gather(*[
-            x(self) for x in self.push_callbacks
-        ])
+        def wrap():
+            for binding in self.push_bindings:
+                if binding.eho_safe or binding is not from_binding:
+                    yield self.app.async_run(binding.push, self)
+        await asyncio.gather(*wrap())
 
     def validate_args(self, data):
         assert set(data.keys()).issubset(set(self.get_states().keys()))\
             , f'{self} dont have states: {set(data.keys()) - set(self.get_states().keys())}'
 
-    async def async_update(self, data: dict):
+    async def async_update(self, data: dict, from_binding=None):
         async with self.data_lock:
             self.validate_args(data)
+            before = self.as_json()
             await self.before_update()
             for n, x in data.items():
                 setattr(self, n, x)
             await self.after_update()
+            if before != self.as_json():
+                await self.push(from_binding)
 
     async def request_data(self):
         data = {}
-        for x in self.request_callbacks:
-            _data = await self.app.async_run(x, self)
+        for x in self.request_bindings:
+            _data = await self.app.async_run(x.thing_request, self)
             if isinstance(_data, dict):
                 data.update(**_data)
         await self.async_update(data)
@@ -160,11 +170,6 @@ class Thing(object, metaclass=ThingMeta):
         return json.dumps(
             {n: getattr(self, n) for n in self.get_states().keys()}
         )
-
-    def update_from_json(self, json_raw: str):
-        params: dict = json.loads(json_raw)
-        for name, value in params.items():
-            setattr(self, name, value)
 
     async def start(self):
         await self.request_data()

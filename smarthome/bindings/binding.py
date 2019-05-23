@@ -3,6 +3,7 @@ from typing import List, Callable, Dict, Generic
 from logging import getLogger
 import asyncio
 from threading import Lock
+import queue
 
 logger = getLogger(__name__)
 
@@ -11,8 +12,10 @@ MODE_SYNC = 2
 
 class Binding(Generic[_T]):
 
+    # if you want to protect binding from push after updates, set it to False
+    eho_safe: bool = False
+
     def __get__(self, instance, owner):
-        self.app = instance
         return self
 
     def __set_name__(self, owner, name):
@@ -29,16 +32,23 @@ class Binding(Generic[_T]):
         obj = object.__new__(cls)
         obj.subscribe_data: Dict[Thing, dict] = {}
         obj.data_lock = Lock()
-        obj.data_que = asyncio.Queue()
+        obj.async_que = asyncio.Queue() # todo: add que managers for sync/async modes
+        obj.thread_que = queue.Queue()
         obj.sync_mode = MODE_ASYNC
-        obj.app: App = None
+        obj._app: App = None
         return obj
+
+    @property
+    def app(self):
+        if self._app is None:
+            raise RuntimeError('app is not set for')
+        return self._app
 
     def bind(self
              , push=True
              , subscribe=True
              , subscribe_data: dict = None
-             , request = True
+             , request = False
              , *args
              , thing: _T = None
              , **kwargs) -> _T:
@@ -55,11 +65,11 @@ class Binding(Generic[_T]):
             thing = thing(*args, **kwargs)
         thing: Thing = thing
         if push:
-            thing.push_callbacks.append(self.push)
+            thing.push_bindings.append(self)
         if subscribe:
             self.subscribe_data[thing] = subscribe_data
         if request:
-            thing.request_callbacks.append(self.thing_request)
+            thing.request_bindings.append(self)
         thing: _T = thing
         logger.debug(f'{thing} binded to {self}')
         return thing
@@ -78,7 +88,7 @@ class Binding(Generic[_T]):
         :return:
         """
         logger.debug(f'update {thing} with {data}')
-        await thing.async_update(data)
+        await thing.async_update(data, from_binding=self)
 
     async def thing_request(self, thing: Thing) -> dict:
         """
