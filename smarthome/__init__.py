@@ -1,7 +1,9 @@
 import asyncio
 import json
-from typing import TypeVar
+from typing import TypeVar, cast
 from logging import getLogger
+from threading import Lock as ThreadLock
+import functools
 
 _T = TypeVar('_T')
 logger = getLogger(__name__)
@@ -50,9 +52,26 @@ class Thing(object, metaclass=ThingMeta):
     root = ''
 
     def __new__(cls, *args, **kwargs):
+        from .app import App
         obj = object.__new__(cls)
         obj.push_callbacks = []
+        obj.request_callbacks = []
+        obj.data_lock = asyncio.Lock()
+        obj.thread_lock = ThreadLock()
+        obj.que = asyncio.Queue()
+        obj.app: App = None
+        obj._init_args = args
+        obj._init_kwargs = kwargs
+        obj._bindings = []
         return obj
+
+    def bind(self, binding: _T, *args, **kwargs):
+        self._bindings.append((binding, args, kwargs))
+        return self
+
+    def start_bindings(self):
+        for (x, args, kwargs) in self._bindings:
+            x.bind(*args, thing=self, **kwargs)
 
     def __init__(self, *, bindings: list=None):
         for x in (bindings or []):
@@ -64,10 +83,27 @@ class Thing(object, metaclass=ThingMeta):
             n: x for n, x in cls.__dict__.items() if isinstance(x, state)
         }
 
+    def __hash__(self):
+        return hash(self.unique_id)
+
+    def __eq__(self, other):
+        if isinstance(other, Thing):
+            return self.unique_id == other.unique_id
+        elif isinstance(other, str):
+            return self.unique_id
+        else:
+            return False
+
     def __set_name__(self, owner, name):
         self.name = name
+        self.owner: type = owner
+
+    @property
+    def unique_id(self):
+        return f'{self.root}.{self.name}'
 
     def __get__(self, instance, owner):
+        self.app = instance
         return self
 
     async def push(self):
@@ -76,16 +112,35 @@ class Thing(object, metaclass=ThingMeta):
             x(self) for x in self.push_callbacks
         ])
 
-    def validate_args(self, kwargs):
-        assert set(kwargs.keys()).issubset(set(self.get_states().keys()))\
-            , f'{self} dont have states: {set(kwargs.keys()) - set(self.get_states().keys())}'
+    def validate_args(self, data):
+        assert set(data.keys()).issubset(set(self.get_states().keys()))\
+            , f'{self} dont have states: {set(data.keys()) - set(self.get_states().keys())}'
 
-    async def update(self, args_dict: dict):
-        self.validate_args(args_dict)
-        await self.before_update()
-        for n, x in args_dict.items():
-            setattr(self, n, x)
-        await self.after_update()
+    async def async_update(self, data: dict):
+        async with self.data_lock:
+            self.validate_args(data)
+            await self.before_update()
+            for n, x in data.items():
+                setattr(self, n, x)
+            await self.after_update()
+
+    async def request_data(self):
+        data = {}
+        for x in self.request_callbacks:
+            _data = await self.app.async_run(x, self)
+            if isinstance(_data, dict):
+                data.update(**_data)
+        await self.async_update(data)
+
+    async def handle_que(self):
+        while True:
+            await self.async_update(data=await self.que.get())
+
+    async def sync_update(self, data: dict):
+        def wrap():
+            with self.thread_lock:
+                return self.async_update(data)
+        await self.app.async_run(wrap)
 
     async def before_update(self):
         """
@@ -106,47 +161,18 @@ class Thing(object, metaclass=ThingMeta):
             {n: getattr(self, n) for n in self.get_states().keys()}
         )
 
-    def json_handler(self, json_raw: str):
+    def update_from_json(self, json_raw: str):
         params: dict = json.loads(json_raw)
         for name, value in params.items():
             setattr(self, name, value)
 
+    async def start(self):
+        await self.request_data()
+
+    def __repr__(self):
+        return f'{self}'
+
     def __str__(self):
-        return f'{self.__class__}.{self.name} with state:  {self.as_json()}'
+        return f'{self.__class__.__name__}.{self.name} with state:  {self.as_json()}'
 
 
-def bind(thing: _T, push_call, *args, **kwargs) -> _T:
-
-    class Binded(thing):
-
-        async def push(self):
-            return await push_call(self)
-
-        def __repr__(self):
-            return f'binded {thing} to {push_call}'
-
-    return Binded(*args, **kwargs)
-
-
-class Switch(Thing):
-    root = 'switch'
-    is_on: bool = state(False)
-
-
-class Dimmer(Thing):
-    root = 'dimmer'
-    dim_level: int = state(0)
-
-
-class Number(Thing):
-    root = 'number'
-    value: float = state(0)
-
-
-class String(Thing):
-    root = 'string'
-    value: str = state('')
-
-
-class App(object):
-    things = []
