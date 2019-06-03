@@ -10,6 +10,9 @@ import pytest
 import threading
 from smarthome.bindings.mqtt import DEF_OUT_TOPIC
 import queue
+from hbmqtt.client import MQTTClient
+from hbmqtt.mqtt import constants as mqtt_const
+from hbmqtt.session import ApplicationMessage
 
 HOST = 'm24.cloudmqtt.com'
 PORT = 14884
@@ -18,27 +21,16 @@ PORT = 14884
 
 
 @fixture()
-def mqtt_recieve(app):
+async def mqtt_recieve(app):
 
-    class MqttThread(threading.Thread):
+    client = MQTTClient()
+    await client.connect(f'mqtt://{secrets.MQTT_USER}:{secrets.MQTT_PWD}@{HOST}:{PORT}')
+    await client.subscribe([
+        (app.mqtt_binding.subs_out_topic, mqtt_const.QOS_2)
+    ])
+    yield client
+    await client.disconnect()
 
-        def __init__(self):
-            super().__init__(daemon=True)
-            self.res: client.MQTTMessage = None
-            self.and_queue = queue.Queue()
-
-        def run(self) -> None:
-            msg: client.MQTTMessage = subscribe.simple(
-                topics=[app.mqtt_binding.subs_out_topic]
-                , auth={'username': secrets.MQTT_USER, 'password': secrets.MQTT_PWD}
-                , hostname=HOST
-                , port=PORT
-            )
-            self.res = msg
-
-    task = MqttThread()
-    task.start()
-    yield task
 
 @fixture
 def mqtt_push_client():
@@ -49,19 +41,19 @@ def mqtt_push_client():
 
 
 @fixture
-async def app(mqtt_push_client):
-    from smarthome.bindings.mqtt import MqttBinding
+async def app():
+    from smarthome.bindings.async_mqtt import MqttBinding
     from smarthome.things import Switch
     from smarthome.app import App
 
     class MainApp(App):
-        mqtt_binding = MqttBinding(mqtt_push_client, host=HOST, port=PORT)
+        mqtt_binding = MqttBinding(host=HOST, port=PORT, auth=f'{secrets.MQTT_USER}:{secrets.MQTT_PWD}')
         test_switch = Switch().bind(mqtt_binding)
 
     app = MainApp()
     app.start()
     yield app
-    app.stop()
+    await app.stop()
     await asyncio.sleep(1)
 
 
@@ -74,7 +66,5 @@ async def test_turn_on(app, mqtt_recieve):
     await app.started.wait()
     app.test_switch.is_on = False
     await app.test_switch.push()
-    mqtt_recieve.join()
-    assert mqtt_recieve.res.topic == DEF_OUT_TOPIC.format(
-        app_name = app.name, thing_id = app.test_switch.unique_id
-    )
+    msg: ApplicationMessage = await mqtt_recieve.deliver_message()
+    print(msg.topic)

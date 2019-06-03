@@ -70,6 +70,11 @@ class App(object):
         if not self.loop.is_running():
             self.loop.run_forever()
 
-    def stop(self):
+    async def stop(self):
         for x in self.get_bindings():
-            x.stop()
+            logger.debug(f'Stop binding {x.name}')
+            if not asyncio.iscoroutinefunction(x.stop):
+                x.stop()
+            else:
+                await x.stop()
+        logger.debug(f'{self.name} stopped')
