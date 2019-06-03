@@ -108,7 +108,6 @@ class Thing(object, metaclass=ThingMeta):
     def unique_id(self):
         return f'{self.root}.{self.name}'
 
-
     async def push(self, from_binding=None):
         logger.debug(f'{self} begin push')
         def wrap():

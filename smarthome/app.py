@@ -20,6 +20,7 @@ class App(object):
     def __init__(self):
         self.threadPool = ThreadPoolExecutor()
         self._loop = asyncio.get_event_loop()
+        self.started = asyncio.Event()
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
@@ -61,6 +62,7 @@ class App(object):
         for x in self.get_things():
             x.start_bindings()
         await asyncio.gather(*[x._start() for x in self.get_bindings()])
+        self.started.set()
         logger.info(f'{self} started!')
 
     def start(self):

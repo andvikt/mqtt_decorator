@@ -9,6 +9,6 @@ setup(
     author='andrewgermanovich',
     author_email='',
     description='',
-    tests_require=['pytest', 'pytest-asyncio'],
+    tests_require=['pytest', 'pytest-asyncio', 'hbmqtt'],
     install_requires=[]
 )

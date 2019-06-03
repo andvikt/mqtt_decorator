@@ -29,6 +29,8 @@ class MqttBinding(Binding):
 
     def __init__(self
                  , mqtt: Client
+                 , host
+                 , port
                  , subscribe_topic=DEF_SUBSCRIBE_TOPIC
                  , in_topic: str = DEF_IN_TOPIC
                  , out_topic: str = DEF_OUT_TOPIC
@@ -36,6 +38,8 @@ class MqttBinding(Binding):
                  ):
         self.mqtt = mqtt
         self.root_topic = subscribe_topic
+        self.host=host
+        self.port=port
         self.in_topic = DEF_IN_TOPIC
         self.out_topic = DEF_OUT_TOPIC
         self.data_handler = data_handler
@@ -59,7 +63,7 @@ class MqttBinding(Binding):
 
     def push(self, thing: Thing):
         logger.debug(f'push {thing}')
-        self.mqtt.publish(DEF_OUT_TOPIC.format(app_name=self.app.name, thing_id=thing.unique_id), thing.as_json())
+        self.mqtt.publish(DEF_OUT_TOPIC.format(app_name=self.app.name, thing_id=thing.unique_id), thing.as_json(), qos=2)
 
     def start(self):
         mqtt_connected = Lock()
@@ -75,8 +79,8 @@ class MqttBinding(Binding):
             mqtt_connected.acquire()
 
         def start():
-            self.mqtt.connect('m24.cloudmqtt.com', port=14884)
-            self.mqtt.loop_start()
+            self.mqtt.connect(self.host, port=self.port)
+            self.mqtt.loop_forever()
 
         self.mqtt.on_connect = release
         self.mqtt.on_disconnect = disconnect
