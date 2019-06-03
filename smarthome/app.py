@@ -65,6 +65,9 @@ class App(object):
 
     def start(self):
         self.loop.create_task(self._start())
-        self.loop.run_forever()
+        if not self.loop.is_running():
+            self.loop.run_forever()
 
-
+    def stop(self):
+        for x in self.get_bindings():
+            x.stop()

@@ -15,9 +15,6 @@ class Binding(Generic[_T]):
     # if you want to protect binding from push after updates, set it to False
     eho_safe: bool = False
 
-    def __get__(self, instance, owner):
-        return self
-
     def __set_name__(self, owner, name):
         self.name = name
 
@@ -121,4 +118,7 @@ class Binding(Generic[_T]):
         When succesfull finish, must return True
         :return:
         """
+        raise NotImplementedError
+
+    def stop(self):
         raise NotImplementedError

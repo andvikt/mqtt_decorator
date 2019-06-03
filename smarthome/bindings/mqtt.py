@@ -4,7 +4,7 @@ from typing import TypeVar, Pattern, Callable
 from smarthome import Thing
 from mqtt_decorator.decorator import Client
 from logging import getLogger
-from threading import Lock, Thread
+from threading import Lock, Thread, Event
 from queue import Queue
 
 import re
@@ -50,6 +50,13 @@ class MqttBinding(Binding):
     def subs_topic(self):
         return self.root_topic.format(app_name = self.app.name)
 
+    @property
+    def subs_out_topic(self):
+        return DEF_OUT_TOPIC.format(
+            app_name=self.app.name
+            , thing_id='+'
+        )
+
     def push(self, thing: Thing):
         logger.debug(f'push {thing}')
         self.mqtt.publish(DEF_OUT_TOPIC.format(app_name=self.app.name, thing_id=thing.unique_id), thing.as_json())
@@ -57,6 +64,7 @@ class MqttBinding(Binding):
     def start(self):
         mqtt_connected = Lock()
         mqtt_connected.acquire()
+
         def release(*args):
             mqtt_connected.release()
             logger.info(f'mqtt connected, subscribe to {self.subs_topic}')
@@ -68,14 +76,14 @@ class MqttBinding(Binding):
 
         def start():
             self.mqtt.connect('m24.cloudmqtt.com', port=14884)
-            self.mqtt.loop_forever()
+            self.mqtt.loop_start()
 
         self.mqtt.on_connect = release
         self.mqtt.on_disconnect = disconnect
         self.mqtt.on_message = self.handle_msg
 
         # begin new thread
-        mqtt_thread = Thread(target=start)
+        mqtt_thread = Thread(target=start, daemon=True)
         mqtt_thread.start()
         with mqtt_connected:
             return True
@@ -105,3 +113,6 @@ class MqttBinding(Binding):
             data = parse_raw_json(msg.payload)
         if data is not None:
             self.app.shedule_async_run(self.update_thing(thing, data))
+
+    def stop(self):
+        self.mqtt.loop_stop()

@@ -108,8 +108,6 @@ class Thing(object, metaclass=ThingMeta):
     def unique_id(self):
         return f'{self.root}.{self.name}'
 
-    def __get__(self, instance, owner):
-        return self
 
     async def push(self, from_binding=None):
         logger.debug(f'{self} begin push')

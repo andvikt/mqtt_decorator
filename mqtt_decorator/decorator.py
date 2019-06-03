@@ -83,7 +83,7 @@ def parse_yml_or_json(txt):
 
 class Client(mqtt.Client):
 
-    def __init__(self, *args, qos=0, username=None, pwd=None, **kwargs):
+    def __init__(self, *args, qos=0, **kwargs):
         super().__init__(*args, **kwargs)
         self.on_message = self.cb_wrap
         self.on_connect = self._on_connect
