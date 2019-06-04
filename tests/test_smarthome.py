@@ -15,13 +15,13 @@ PORT = 14884
 
 
 
-@fixture()
+@fixture
 async def mqtt_recieve(app):
 
     client = MQTTClient()
     await client.connect(f'mqtt://{secrets.MQTT_USER}:{secrets.MQTT_PWD}@{HOST}:{PORT}')
     await client.subscribe([
-        (app.mqtt_binding.subs_out_topic, mqtt_const.QOS_0)
+        (app.mqtt_binding.subs_out_topic, mqtt_const.QOS_2)
     ])
     yield client
     await client.disconnect()
