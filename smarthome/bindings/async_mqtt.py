@@ -82,7 +82,6 @@ class MqttBinding(Binding):
             topic=DEF_OUT_TOPIC.format(app_name=self.app.name, thing_id=state.thing.unique_id, state_name=state.name)
             , message=str(state.value).encode()
             , qos=mqtt_const.QOS_2
-            , retain=True
         )
 
     async def start(self):

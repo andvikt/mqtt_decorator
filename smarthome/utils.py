@@ -4,7 +4,9 @@ import yaml
 from logging import getLogger
 from functools import wraps, partial
 import asyncio
-from typing import Callable, Dict, TypeVar, Any, Generator, Tuple, Union
+from typing import Callable, Dict, TypeVar, Any, Generator, Tuple, Union, cast
+from dataclasses import field
+import attr
 
 logger = getLogger('smarthome')
 _T = TypeVar('_T')
@@ -77,3 +79,63 @@ def str_to_bool(value: str) -> bool:
     return value.lower().strip() == 'True' or \
            value.lower().strip() == 'on'
 
+def rule(cond: asyncio.Condition, wait_for=None):
+    """
+    Rule-decorator
+    When foo is decorated with rule, it is sheduled to run in endless loop awating on event
+        , each time event triggers
+        , foo is called
+    :param cond:
+    :param wait_for: if passed, wait_for will be used instead of wait, wait_for will be passed to wait_for
+    :return:
+    """
+    def deco(foo):
+        @loop_forever(start_immediate=True)
+        async def wrap():
+            async with cond:
+                if not wait_for:
+                    await cond.wait()
+                else:
+                    await cond.wait_for(wait_for)
+                await foo()
+        return wrap
+    return deco
+
+from datetime import datetime
+
+def counting(max_count = None, max_wait=None):
+    """
+    Decorator. Decorated foo is called each time cond is triggered.
+    Also counting number of trigerred event is passed as first argument
+    :param max_count: Max count, after that counter will be set to zero
+    :param max_wait: Max wait between counts in seconds
+    :return:
+    """
+
+    def deco(foo: Callable[[int], Any]):
+        cnt = 0
+        last_time = datetime.now()
+        async def wrap():
+            nonlocal cnt
+            nonlocal last_time
+            if max_wait:
+                if (datetime.now() - last_time).seconds >= max_wait:
+                    cnt = 0
+            if max_count:
+                if cnt>=max_count:
+                    cnt = 0
+            await foo(cnt)
+            cnt += 1
+            last_time = datetime.now()
+        return wrap
+    return deco
+
+def state(default, converter=None):
+    from . import State
+    return cast(
+        State,
+        attr.ib(
+            factory=partial(State, converter or float, default)
+            , init=False
+        )
+    )

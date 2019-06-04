@@ -26,6 +26,7 @@ async def mqtt_recieve(app):
     yield client
     #teardown
     await client.disconnect()
+    await asyncio.sleep(1)
 
 
 @fixture
@@ -37,11 +38,17 @@ async def app():
     class MainApp(App):
         mqtt_binding = async_mqtt.MqttBinding(host=HOST, port=PORT, auth=f'{secrets.MQTT_USER}:{secrets.MQTT_PWD}')
         hello_switch = Switch().bind_to(mqtt_binding)
+        other_switch = Switch()
+
+        def bind(self):
+            self.other_switch.bind_to(self.mqtt_binding)
 
     app = MainApp()
     assert app.mqtt_binding.app == app
     assert app.hello_switch.app is app
     assert app.hello_switch.is_on.thing is app.hello_switch
+
+    assert app.hello_switch.is_on is not app.other_switch.is_on
 
     app.start()
 
@@ -50,8 +57,12 @@ async def app():
     await app.stop()
 
 
-def test_names(app):
-    assert app.hello_switch.name == 'test_switch'
+@pytest.mark.asyncio
+async def test_names(app):
+    await app.started.wait()
+    assert app.hello_switch.name == 'hello_switch'
+    assert app.other_switch.name == 'other_switch'
+
 
 
 @pytest.mark.asyncio
@@ -65,6 +76,10 @@ async def test_turn_on(app, mqtt_recieve):
         , state_name=app.hello_switch.is_on.name
     )
 
+@pytest.mark.asyncio
+async def test_recieve_mqtt(app, mqtt_recieve):
+    await app.hello_switch.is_on.command(True)
+    await asyncio.sleep(0)
     async with app.hello_switch.is_on.changed:
         await mqtt_recieve.publish(async_mqtt.DEF_IN_TOPIC.format(
             app_name=app.name
@@ -77,3 +92,13 @@ async def test_turn_on(app, mqtt_recieve):
         await asyncio.wait([app.hello_switch.is_on.changed.wait()], timeout=5.0)
         assert app.hello_switch.is_on.value == False
 
+@pytest.mark.asyncio
+async def test_other_turn_on(app, mqtt_recieve):
+    await app.started.wait()
+    await app.other_switch.is_on.command(True)
+    msg: ApplicationMessage = await mqtt_recieve.deliver_message(timeout=5)
+    assert msg.topic == async_mqtt.DEF_OUT_TOPIC.format(
+        app_name=app.name
+        , thing_id=app.other_switch.unique_id
+        , state_name=app.other_switch.is_on.name
+    )

@@ -17,37 +17,31 @@ logger = getLogger(__name__)
 CHANGE = 'update'
 COMMAND = 'command'
 
-
+@attr.s
 class Thing(object):
 
     root = ''
 
-    def __new__(cls, *args, **kwargs):
+    def __attrs_post_init__(self):
         if not asyncio.get_event_loop().is_running():
             warnings.warn('Will raise Error', DeprecationWarning)
         from .app import App
         from .bindings.binding import Binding
-        obj = object.__new__(cls)
-        obj.push_bindings: List[Binding] = []
-        obj.request_bindings: List[Binding] = []
-        obj.data_lock = asyncio.Lock()
-        obj.thread_lock = ThreadLock()
-        obj.que = asyncio.Queue()
-        obj.name = None
-        obj._app: App = None
-        obj._init_args = args
-        obj._init_kwargs = kwargs
-        obj._bindings: List[Binding] = []
-        obj.states: Dict[str, State] = {}
-        obj.start_callbacks = []
-        for name, x in cls.__dict__.items():
+        self.push_bindings: List[Binding] = []
+        self.request_bindings: List[Binding] = []
+        self.data_lock = asyncio.Lock()
+        self.thread_lock = ThreadLock()
+        self.que = asyncio.Queue()
+        self.name = None
+        self._app: App = None
+        self._bindings: List[Binding] = []
+        self.states: Dict[str, State] = {}
+        self.start_callbacks = []
+        for name, x in self.__dict__.items():
             if isinstance(x, State):
-                cp = copy(x)
-                cp.thing = obj
-                cp.name = name
-                setattr(obj, name, cp)
-                obj.states[name] = cp
-        return obj
+                x.thing = self
+                x.name = name
+                self.states[name] = x
 
     @property
     def app(self):
@@ -84,14 +78,13 @@ class Thing(object):
                     _event = x.changed
                 elif event == 'update':
                     _event = x.received_update
-                elif event == 'command':
+                else:
                     _event = x.received_command
 
-                @utils.loop_forever(start_immediate=True)
+                @utils.rule(_event)
                 async def push():
-                    async with _event:
-                        await _event.wait()
-                        await binding.push(x)
+                    await binding.push(x)
+
             # subscribe
             if subscribe:
                 binding.subscriptions[(self.unique_id, n)] = x
