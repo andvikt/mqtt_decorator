@@ -8,7 +8,7 @@ from logging import getLogger
 from functools import partial
 from asyncio.queues import Queue
 from threading import Lock
-
+from . import utils
 logger = getLogger(__name__)
 
 
@@ -28,29 +28,9 @@ class App(object):
             if isinstance(x, (Thing, Binding)):
                 x._app = self
 
-
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
         return self._loop
-
-    async def async_run(self, foo, *args, **kwargs):
-        """
-        Run foo until it returns not an awaitable object
-        :param foo:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        if asyncio.iscoroutinefunction(foo):
-            foo = foo(*args, **kwargs)
-        elif not isawaitable(foo):
-            foo = self.loop.run_in_executor(self.threadPool, partial(foo, *args, **kwargs))
-        while isawaitable(foo):
-            foo = await foo
-        return foo
-
-    def shedule_async_run(self, coro):
-        asyncio.run_coroutine_threadsafe(coro, self.loop)
 
     def get_things(self) -> typing.List[Thing]:
         return [getattr(self, x) for x, v in self.__class__.__dict__.items() if isinstance(v, Thing)]
@@ -73,15 +53,20 @@ class App(object):
         logger.info(f'{self} started!')
 
     def start(self):
-        self.loop.create_task(self._start())
-        self.bind()
+
         if not self.loop.is_running():
-            self.loop.run_forever()
+            raise RuntimeError('App must start in running loop')
+        else:
+            async def start():
+                await self._start()
+                self.bind()
+            return start()
 
     def bind(self):
         pass
 
     async def stop(self):
+        utils.stop_loops()
         for x in self.get_bindings():
             logger.debug(f'Stop binding {x.name}')
             if not asyncio.iscoroutinefunction(x.stop):

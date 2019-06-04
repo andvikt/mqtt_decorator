@@ -12,6 +12,8 @@ logger = getLogger('smarthome')
 _T = TypeVar('_T')
 _X = TypeVar('_X')
 
+_LOOPS = []
+
 def parse_raw_json(raw: str):
     try:
         return yaml.load(raw, Loader=yaml.FullLoader)
@@ -45,7 +47,9 @@ def loop_forever(foo=None, *, start_immediate=False, **kwargs):
             except asyncio.CancelledError:
                 pass
         if start_immediate:
-            return asyncio.ensure_future(wrapper(**kwargs))
+            ftr =  asyncio.ensure_future(wrapper(**kwargs))
+            _LOOPS.append(ftr)
+            return ftr
         return wrapper
     return deco if foo is None else deco(foo)
 
@@ -139,3 +143,7 @@ def state(default, converter=None):
             , init=False
         )
     )
+
+def stop_loops():
+    for x in _LOOPS:
+        x.cancel()

@@ -8,6 +8,7 @@ from hbmqtt.client import MQTTClient
 from hbmqtt.mqtt import constants as mqtt_const
 from hbmqtt.session import ApplicationMessage
 from smarthome.bindings import async_mqtt
+from smarthome import utils
 
 HOST = 'm24.cloudmqtt.com'
 PORT = 14884
@@ -15,7 +16,7 @@ PORT = 14884
 
 
 
-@fixture
+@fixture(scope='module')
 async def mqtt_recieve(app):
 
     client = MQTTClient()
@@ -29,7 +30,7 @@ async def mqtt_recieve(app):
     await asyncio.sleep(1)
 
 
-@fixture
+@fixture(scope='module')
 async def app():
 
     from smarthome.things import Switch
@@ -50,16 +51,16 @@ async def app():
 
     assert app.hello_switch.is_on is not app.other_switch.is_on
 
-    app.start()
+    await app.start()
 
     yield app
     #teardown
     await app.stop()
 
 
+
 @pytest.mark.asyncio
 async def test_names(app):
-    await app.started.wait()
     assert app.hello_switch.name == 'hello_switch'
     assert app.other_switch.name == 'other_switch'
 
@@ -67,7 +68,6 @@ async def test_names(app):
 
 @pytest.mark.asyncio
 async def test_turn_on(app, mqtt_recieve):
-    await app.started.wait()
     await app.hello_switch.is_on.command(True)
     msg: ApplicationMessage = await mqtt_recieve.deliver_message(timeout=5)
     assert msg.topic == async_mqtt.DEF_OUT_TOPIC.format(
@@ -94,11 +94,17 @@ async def test_recieve_mqtt(app, mqtt_recieve):
 
 @pytest.mark.asyncio
 async def test_other_turn_on(app, mqtt_recieve):
-    await app.started.wait()
     await app.other_switch.is_on.command(True)
     msg: ApplicationMessage = await mqtt_recieve.deliver_message(timeout=5)
     assert msg.topic == async_mqtt.DEF_OUT_TOPIC.format(
         app_name=app.name
         , thing_id=app.other_switch.unique_id
         , state_name=app.other_switch.is_on.name
+    )
+
+@pytest.mark.asyncio
+async def test_parallel_sending(app, mqtt_recieve):
+    await asyncio.gather(
+        test_turn_on(app, mqtt_recieve)
+        , test_other_turn_on(app, mqtt_recieve)
     )

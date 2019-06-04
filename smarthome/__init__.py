@@ -43,6 +43,13 @@ class Thing(object):
                 x.name = name
                 self.states[name] = x
 
+    @utils.loop_forever
+    async def _loop(self):
+        await self.loop()
+
+    async def loop(self):
+        await asyncio.sleep(1)
+
     @property
     def app(self):
         if self._app is None:
@@ -183,9 +190,9 @@ class Thing(object):
         return {n: x.value for n, x in self.states.items()}
 
     async def start(self):
+        asyncio.ensure_future(self._loop())
         for x in self.start_callbacks:
             x()
-        await self.request_data()
 
     def __repr__(self):
         return f'{self}'
