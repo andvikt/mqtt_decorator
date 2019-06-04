@@ -1,11 +1,11 @@
-from ..utils import parse_raw_json
-from .binding import Binding
+from ..utils import parse_raw_json, loop_forever
+from .binding import Binding, State
 from typing import TypeVar, Pattern, Callable
-from smarthome import Thing
 from hbmqtt.client import MQTTClient
 from hbmqtt.mqtt import constants as mqtt_const
 from hbmqtt.session import ApplicationMessage
 from logging import getLogger
+import warnings
 
 import re
 import asyncio
@@ -16,9 +16,12 @@ logger = getLogger('mqtt_binding')
 _T = TypeVar('_T')
 
 THING_ID = 'thing_id'
+STATE_NAME = 'state_name'
 
-DEF_OUT_TOPIC = '/{app_name}/{thing_id}/out'
-DEF_IN_TOPIC = '/{app_name}/{thing_id}/in'
+DEF_OUT_TOPIC = '/{app_name}/{thing_id}/{state_name}/out'
+SUBS_OUT_TOPIC = '/{app_name}/+/+/out'
+DEF_IN_TOPIC = '/{app_name}/{thing_id}/{state_name}/in'
+SUBS_IN_TOPIC = '/{app_name}/+/in'
 DEF_SUBSCRIBE_TOPIC = '/{app_name}/+/in'
 
 class MqttBinding(Binding):
@@ -36,7 +39,7 @@ class MqttBinding(Binding):
                  , data_handler: Callable = None
                  , auth: str = None  #"usr:pass"
                  ):
-        self.mqtt = MQTTClient()
+        self.mqtt = MQTTClient(client_id='mqtt_binding')
         self.root_topic = subscribe_topic
         self.host=host
         self.port= f':{port}' if port else ''
@@ -46,10 +49,18 @@ class MqttBinding(Binding):
         self.data_lock = asyncio.Lock()
         self.auth = auth or ''
         self.loop_to_stop: asyncio.Future = None
+        self._parse_topic: Pattern = None
 
     @property
     def parse_topic(self):
-        return re.compile(self.in_topic.format(app_name = self.app.name, thing_id = rf'(?P<{THING_ID}>.*)'), re.IGNORECASE)
+        if self._parse_topic is None:
+            self._parse_topic = re.compile(
+                self.in_topic.format(
+                    app_name = self.app.name
+                    , thing_id = rf'(?P<{THING_ID}>.*)'
+                    , state_name = rf'(?P<{STATE_NAME}>.*)'
+                ), re.IGNORECASE)
+        return self._parse_topic
 
     @property
     def subs_topic(self):
@@ -57,60 +68,54 @@ class MqttBinding(Binding):
 
     @property
     def subs_out_topic(self):
-        return DEF_OUT_TOPIC.format(
+        return SUBS_OUT_TOPIC.format(
             app_name=self.app.name
-            , thing_id='+'
         )
 
     @property
     def uri(self):
         return f'mqtt://{self.auth}@{self.host}{self.port}'
 
-    async def push(self, thing: Thing):
-        logger.debug(f'push {thing}')
+    async def push(self, state: State):
+        logger.debug(f'push {state}')
         await self.mqtt.publish(
-            topic=DEF_OUT_TOPIC.format(app_name=self.app.name, thing_id=thing.unique_id)
-            , message=thing.as_json().encode()
-            , qos=2
-            , retain=True
+            topic=DEF_OUT_TOPIC.format(app_name=self.app.name, thing_id=state.thing.unique_id, state_name=state.name)
+            , message=str(state.value).encode()
+            , qos=mqtt_const.QOS_2
         )
 
     async def start(self):
 
         await self.mqtt.connect(self.uri)
-        await self.mqtt.subscribe([(self.subs_topic, mqtt_const.QOS_0)])
+        await self.mqtt.subscribe([(self.subs_topic, mqtt_const.QOS_2)])
         logger.debug(f'{self.name} connected and suscribed to {self.subs_topic}')
 
+        @loop_forever(start_immediate=True)
         async def loop():
-            try:
-                while True:
-                    msg = await self.mqtt.deliver_message()
-                    self.handle_msg(msg)
-            except asyncio.CancelledError:
-                pass
+            msg = await self.mqtt.deliver_message()
+            await self.handle_msg(msg)
 
-        self.loop_to_stop = asyncio.ensure_future(loop())
+        self.loop_to_stop = loop
 
-    def handle_msg(self, msg: ApplicationMessage):
+    async def handle_msg(self, msg: ApplicationMessage):
         logger.debug(f'{self} handle {msg.topic}: {msg.data}')
-        thing_id = self.parse_topic.match(msg.topic)
-        if thing_id is not None:
-            thing_id = thing_id.groupdict().get(THING_ID)
-        if thing_id is None:
-            logger.warning(f'{self} could not parse {msg.topic} using {self.parse_topic}')
-            return
-        logger.debug(f'{THING_ID}={thing_id}')
-        thing = self.get_subscribed_thing(thing_id)
-        if thing is None:
-            return
-        if self.data_handler is not None:
-            data = self.data_handler(msg.data)
+        match = self.parse_topic.match(msg.topic)
+        if match is not None:
+            thing_id = match.groupdict().get(THING_ID)
         else:
-            data = parse_raw_json(msg.data)
-        if data is not None:
-            self.app.shedule_async_run(self.update_thing(thing, data))
+            warnings.warn(f'{self} could not parse {msg.topic}')
+            return
+        if thing_id is None:
+            warnings.warn(f'{self} could not parse {msg.topic} using {self.parse_topic}')
+            return
+        state_name = match.groupdict().get(STATE_NAME)
+        if state_name is None:
+            warnings.warn(f'{msg.topic} does not contain {STATE_NAME}')
+            return
+        await self.trigger_subscription(thing_id, state_name, value=msg.data.decode())
 
     async def stop(self):
+        await self.mqtt.unsubscribe([self.subs_topic])
         self.loop_to_stop.cancel()
         try:
             while True:

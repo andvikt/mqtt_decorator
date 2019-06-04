@@ -1,56 +1,30 @@
 import asyncio
 import json
-from typing import TypeVar, cast, List, Tuple, Callable, Any
+from typing import TypeVar, cast, List, Tuple, Callable, Any, Generic, Dict, Union
 from logging import getLogger
 from threading import Lock as ThreadLock
 import functools
+from dataclasses import dataclass, field
+from copy import copy
+import attr
+import warnings
+from . import utils
 
 _T = TypeVar('_T')
+_ThingT = TypeVar('_ThingT')
 logger = getLogger(__name__)
 
 CHANGE = 'update'
 COMMAND = 'command'
 
-class state(object):
 
-    def __init__(self, default=None):
-        self.default = None
-        self.name = None
-        self.push_callbacks = []
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        return getattr(instance, f'_{self.name}', None)
-
-    def __set_name__(self, owner, name):
-        self.name = name
-        self.owner = owner
-
-    def __set__(self, instance, value):
-        old_value = self.__get__(instance, None)
-        if value == old_value:
-            return
-        logger.debug(f'set {instance}.{self.name} to {value}')
-        setattr(instance, f'_{self.name}', value)
-
-    def __str__(self):
-        return f'<state> {self.owner}.{self.name}'
-
-
-class ThingMeta(type):
-
-    def __new__(cls, name, bases, args: dict):
-        ret = type.__new__(cls, name, bases, args)
-        ret.push_callbacks = []
-        return ret
-
-
-class Thing(object, metaclass=ThingMeta):
+class Thing(object):
 
     root = ''
 
     def __new__(cls, *args, **kwargs):
+        if not asyncio.get_event_loop().is_running():
+            warnings.warn('Will raise Error', DeprecationWarning)
         from .app import App
         from .bindings.binding import Binding
         obj = object.__new__(cls)
@@ -59,10 +33,19 @@ class Thing(object, metaclass=ThingMeta):
         obj.data_lock = asyncio.Lock()
         obj.thread_lock = ThreadLock()
         obj.que = asyncio.Queue()
+        obj.name = None
         obj._app: App = None
         obj._init_args = args
         obj._init_kwargs = kwargs
         obj._bindings: List[Binding] = []
+        obj.states: Dict[str, State] = {}
+        for name, x in cls.__dict__.items():
+            if isinstance(x, State):
+                cp = copy(x)
+                cp.thing = obj
+                cp.name = name
+                setattr(obj, name, cp)
+                obj.states[name] = cp
         return obj
 
     @property
@@ -72,12 +55,53 @@ class Thing(object, metaclass=ThingMeta):
         return self._app
 
     def bind(self, binding: _T, *args, **kwargs):
+        warnings.warn('Bind will be replaced with bind_to', DeprecationWarning)
         self._bindings.append((binding, args, kwargs))
         return self
 
-    def start_bindings(self):
-        for (x, args, kwargs) in self._bindings:
-            x.bind(*args, thing=self, **kwargs)
+    def bind_to(self, binding, push=True, subscribe=True, event='change', *states):
+        """
+        Bind thing to binding
+        :param binding:
+        :param push: if True, will push states to binding
+        :param subscribe: if True, will subscribe to bindig
+        :param event: str, event that will trigger pushed, can be ['change', 'update', 'command']
+        :param states: if supplied, will push/subscribe only to those states
+        :return:
+        """
+        from .bindings.binding import Binding
+        binding: Binding = binding
+        states = states or tuple(self.states.keys())
+        assert set(states).issubset(set(self.states.keys()))
+        assert event in ['change', 'update', 'command']
+        # push
+        if push:
+            for n, x in utils.dict_in(self.states, *states):
+                if event == 'change':
+                    _event = x.changed
+                elif event == 'update':
+                    _event = x.received_update
+                elif event == 'command':
+                    _event = x.received_command
+
+                @utils.loop_forever(start_immediate=True)
+                async def push():
+                    async with _event:
+                        await _event.wait()
+                        await binding.push(x)
+        # subscribe
+        if subscribe:
+            for n, x in utils.dict_in(self.states, *states):
+                if event == 'change':
+                    callback = functools.partial(x.change, _from = binding)
+                elif event == 'update':
+                    callback = functools.partial(x.update, _from = binding)
+                else:
+                    callback = functools.partial(x.command, _from = binding)
+
+                binding.subscriptions[(self.unique_id, n)] = callback
+        return self
+
 
     def __init__(self, *, bindings: list=None):
         for x in (bindings or []):
@@ -86,7 +110,7 @@ class Thing(object, metaclass=ThingMeta):
     @classmethod
     def get_states(cls):
         return {
-            n: x for n, x in cls.__dict__.items() if isinstance(x, state)
+            n: x for n, x in cls.__dict__.items() if isinstance(x, State)
         }
 
     def __hash__(self):
@@ -96,7 +120,7 @@ class Thing(object, metaclass=ThingMeta):
         if isinstance(other, Thing):
             return self.unique_id == other.unique_id
         elif isinstance(other, str):
-            return self.unique_id
+            return self.unique_id == other
         else:
             return False
 
@@ -109,6 +133,7 @@ class Thing(object, metaclass=ThingMeta):
         return f'{self.root}.{self.name}'
 
     async def push(self, from_binding=None):
+        warnings.warn('', DeprecationWarning)
         logger.debug(f'{self} begin push')
         def wrap():
             for binding in self.push_bindings:
@@ -117,10 +142,11 @@ class Thing(object, metaclass=ThingMeta):
         await asyncio.gather(*wrap())
 
     def validate_args(self, data):
-        assert set(data.keys()).issubset(set(self.get_states().keys()))\
+        assert set(data.keys()).issubset(set(self.states.keys()))\
             , f'{self} dont have states: {set(data.keys()) - set(self.get_states().keys())}'
 
     async def async_update(self, data: dict, from_binding=None):
+        warnings.warn('', DeprecationWarning)
         async with self.data_lock:
             self.validate_args(data)
             before = self.as_json()
@@ -140,10 +166,12 @@ class Thing(object, metaclass=ThingMeta):
         await self.async_update(data)
 
     async def handle_que(self):
+        warnings.warn('', DeprecationWarning)
         while True:
             await self.async_update(data=await self.que.get())
 
     async def sync_update(self, data: dict):
+        warnings.warn('', DeprecationWarning)
         def wrap():
             with self.thread_lock:
                 return self.async_update(data)
@@ -164,9 +192,7 @@ class Thing(object, metaclass=ThingMeta):
         pass
 
     def as_json(self):
-        return json.dumps(
-            {n: getattr(self, n) for n in self.get_states().keys()}
-        )
+        return {n: x.value for n, x in self.states.items()}
 
     async def start(self):
         await self.request_data()
@@ -175,6 +201,40 @@ class Thing(object, metaclass=ThingMeta):
         return f'{self}'
 
     def __str__(self):
-        return f'{self.__class__.__name__}.{self.name} with state:  {self.as_json()}'
+        return f'{self.__class__.__name__}.{self.name} with State:  {self.as_json()}'
 
 
+@dataclass
+class State(Generic[_T]):
+    """
+    Represents one of Thing's state, when called change, command or update,
+    then Events are triggered accordingly, notifying all the subscribers
+    """
+    value: _T = None
+    thing: Union[Thing, _ThingT] = field(default=None, init=False, repr=True)
+    name: str = field(default=None, init=False, repr=True)
+    changed: asyncio.Condition = field(default_factory=asyncio.Condition, init=False, repr=False)
+    received_update: asyncio.Condition = field(default_factory=asyncio.Condition, init=False, repr=False)
+    received_command: asyncio.Condition = field(default_factory=asyncio.Condition, init=False, repr=False)
+
+    async def change(self, value: _T, _from: object = None):
+        async with self.changed:
+            if self.value != value:
+                logger.debug(f'Change {self.thing.unique_id}.{self.name} from {self.value} to {value}')
+                self.value = value
+                self.changed.notify_all()
+                return True
+            else:
+                return False
+
+    async def command(self, value: _T, _from: object = None):
+        logger.debug(f'Command recieved for {self.thing.unique_id}.{self.name}')
+        async with self.received_command:
+            await self.change(value)
+            self.received_command.notify_all()
+
+    async def update(self, value: _T, _from: object = None):
+        logger.debug(f'Update recieved for {self.thing.unique_id}.{self.name}')
+        async with self.received_update:
+            await self.change(value)
+            self.received_command.notify_all()

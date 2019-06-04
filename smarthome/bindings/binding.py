@@ -1,9 +1,11 @@
-from smarthome import _T, Thing
-from typing import List, Callable, Dict, Generic
+from smarthome import _T, Thing, State
+from typing import List, Callable, Dict, Generic, DefaultDict, Tuple
 from logging import getLogger
 import asyncio
 from threading import Lock
 import queue
+import warnings
+from collections import defaultdict
 
 logger = getLogger(__name__)
 
@@ -17,6 +19,7 @@ class Binding(Generic[_T]):
 
     def __set_name__(self, owner, name):
         self.name = name
+        self._app = owner
 
     def __repr__(self):
         return self.__str__()
@@ -26,12 +29,15 @@ class Binding(Generic[_T]):
 
     def __new__(cls, *args, **kwargs):
         from ..app import App
+        from .. import State
         obj = object.__new__(cls)
         obj.subscribe_data: Dict[Thing, dict] = {}
         obj.data_lock = Lock()
         obj.async_que = asyncio.Queue() # todo: add que managers for sync/async modes
         obj.thread_que = queue.Queue()
         obj.sync_mode = MODE_ASYNC
+        #  subscriptions are asyncio.Condition, keys are thing_id, state_name
+        obj.subscriptions: Dict[Tuple[str, str], State] = {}
         obj._app: App = None
         return obj
 
@@ -57,6 +63,7 @@ class Binding(Generic[_T]):
         :param request: whether to provide a thing a request callback
         :return:
         """
+        warnings.warn('Will not use bind, use thing.bind_to instead', DeprecationWarning)
         assert thing is not None, f'{self}: thing should be provided'
         if isinstance(thing, (type, Callable)):
             thing = thing(*args, **kwargs)
@@ -71,7 +78,19 @@ class Binding(Generic[_T]):
         logger.debug(f'{thing} binded to {self}')
         return thing
 
+    async def trigger_subscription(self, thing_id: str, state_name: str, value, is_command=False):
+        logger.debug(f'Trigger {thing_id}.{value} from {self.name}')
+        state = self.subscriptions.get((thing_id, state_name), None)
+        if state is None:
+            warnings.warn(f'{thing_id}.{state_name} is not found or not binded to {self.name}')
+            return
+        if is_command:
+            await state.command(value)
+        else:
+            await state.update(value)
+
     def get_subscribed_thing(self, thing_id: str) -> Thing:
+        warnings.warn('get_subscribed_thing', DeprecationWarning)
         for x in self.subscribe_data.keys():
             if x.unique_id == thing_id:
                 return x
@@ -84,6 +103,7 @@ class Binding(Generic[_T]):
         :param data:
         :return:
         """
+        warnings.warn('update_thing', DeprecationWarning)
         logger.debug(f'update {thing} with {data}')
         await thing.async_update(data, from_binding=self)
 
@@ -95,7 +115,7 @@ class Binding(Generic[_T]):
         """
         raise NotImplementedError
 
-    async def push(self, thing: Thing):
+    async def push(self, state: State):
         raise NotImplementedError
 
     async def _start(self):

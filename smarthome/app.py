@@ -12,15 +12,22 @@ from threading import Lock
 logger = getLogger(__name__)
 
 
+
 class App(object):
 
     things = []
     name: str = 'app'
 
     def __init__(self):
+        from . import Thing
+        from .bindings.binding import Binding
         self.threadPool = ThreadPoolExecutor()
         self._loop = asyncio.get_event_loop()
         self.started = asyncio.Event()
+        for n, x in self.__class__.__dict__.items():
+            if isinstance(x, (Thing, Binding)):
+                x._app = self
+
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
@@ -59,8 +66,7 @@ class App(object):
             x._app = self
         for x in self.get_bindings():
             x._app = self
-        for x in self.get_things():
-            x.start_bindings()
+
         await asyncio.gather(*[x._start() for x in self.get_bindings()])
         self.started.set()
         logger.info(f'{self} started!')
