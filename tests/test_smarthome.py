@@ -24,6 +24,7 @@ async def mqtt_recieve(app):
         (app.mqtt_binding.subs_out_topic, mqtt_const.QOS_2)
     ])
     yield client
+    #teardown
     await client.disconnect()
 
 
@@ -45,9 +46,8 @@ async def app():
     app.start()
 
     yield app
-
+    #teardown
     await app.stop()
-    await asyncio.sleep(1)
 
 
 def test_names(app):
@@ -64,3 +64,16 @@ async def test_turn_on(app, mqtt_recieve):
         , thing_id=app.hello_switch.unique_id
         , state_name=app.hello_switch.is_on.name
     )
+
+    async with app.hello_switch.is_on.changed:
+        await mqtt_recieve.publish(async_mqtt.DEF_IN_TOPIC.format(
+            app_name=app.name
+            , thing_id=app.hello_switch.unique_id
+            , state_name=app.hello_switch.is_on.name
+        )
+            , str(False).encode()
+            , qos=mqtt_const.QOS_2
+        )
+        await asyncio.wait([app.hello_switch.is_on.changed.wait()], timeout=5.0)
+        assert app.hello_switch.is_on.value == False
+

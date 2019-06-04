@@ -21,8 +21,8 @@ STATE_NAME = 'state_name'
 DEF_OUT_TOPIC = '/{app_name}/{thing_id}/{state_name}/out'
 SUBS_OUT_TOPIC = '/{app_name}/+/+/out'
 DEF_IN_TOPIC = '/{app_name}/{thing_id}/{state_name}/in'
-SUBS_IN_TOPIC = '/{app_name}/+/in'
-DEF_SUBSCRIBE_TOPIC = '/{app_name}/+/in'
+SUBS_IN_TOPIC = '/{app_name}/+/+/in'
+DEF_SUBSCRIBE_TOPIC = '/{app_name}/+/+/in'
 
 class MqttBinding(Binding):
     """

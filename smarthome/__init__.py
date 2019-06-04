@@ -39,6 +39,7 @@ class Thing(object):
         obj._init_kwargs = kwargs
         obj._bindings: List[Binding] = []
         obj.states: Dict[str, State] = {}
+        obj.start_callbacks = []
         for name, x in cls.__dict__.items():
             if isinstance(x, State):
                 cp = copy(x)
@@ -59,6 +60,7 @@ class Thing(object):
         self._bindings.append((binding, args, kwargs))
         return self
 
+    @utils.start_callback
     def bind_to(self, binding, push=True, subscribe=True, event='change', *states):
         """
         Bind thing to binding
@@ -74,9 +76,10 @@ class Thing(object):
         states = states or tuple(self.states.keys())
         assert set(states).issubset(set(self.states.keys()))
         assert event in ['change', 'update', 'command']
-        # push
-        if push:
-            for n, x in utils.dict_in(self.states, *states):
+
+        for n, x in utils.dict_in(self.states, *states):
+            # push
+            if push:
                 if event == 'change':
                     _event = x.changed
                 elif event == 'update':
@@ -89,17 +92,9 @@ class Thing(object):
                     async with _event:
                         await _event.wait()
                         await binding.push(x)
-        # subscribe
-        if subscribe:
-            for n, x in utils.dict_in(self.states, *states):
-                if event == 'change':
-                    callback = functools.partial(x.change, _from = binding)
-                elif event == 'update':
-                    callback = functools.partial(x.update, _from = binding)
-                else:
-                    callback = functools.partial(x.command, _from = binding)
-
-                binding.subscriptions[(self.unique_id, n)] = callback
+            # subscribe
+            if subscribe:
+                binding.subscriptions[(self.unique_id, n)] = x
         return self
 
 
@@ -195,6 +190,8 @@ class Thing(object):
         return {n: x.value for n, x in self.states.items()}
 
     async def start(self):
+        for x in self.start_callbacks:
+            x()
         await self.request_data()
 
     def __repr__(self):
@@ -210,6 +207,7 @@ class State(Generic[_T]):
     Represents one of Thing's state, when called change, command or update,
     then Events are triggered accordingly, notifying all the subscribers
     """
+    converter: Callable[[str], _T]
     value: _T = None
     thing: Union[Thing, _ThingT] = field(default=None, init=False, repr=True)
     name: str = field(default=None, init=False, repr=True)
@@ -219,6 +217,8 @@ class State(Generic[_T]):
 
     async def change(self, value: _T, _from: object = None):
         async with self.changed:
+            if isinstance(value, str):
+                value = self.converter(value)
             if self.value != value:
                 logger.debug(f'Change {self.thing.unique_id}.{self.name} from {self.value} to {value}')
                 self.value = value

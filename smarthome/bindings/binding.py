@@ -79,15 +79,15 @@ class Binding(Generic[_T]):
         return thing
 
     async def trigger_subscription(self, thing_id: str, state_name: str, value, is_command=False):
-        logger.debug(f'Trigger {thing_id}.{value} from {self.name}')
+        logger.debug(f'Trigger {thing_id}.{state_name} = {value} from {self.name}')
         state = self.subscriptions.get((thing_id, state_name), None)
         if state is None:
             warnings.warn(f'{thing_id}.{state_name} is not found or not binded to {self.name}')
             return
         if is_command:
-            await state.command(value)
+            await state.command(value, _from=self)
         else:
-            await state.update(value)
+            await state.update(value, _from=self)
 
     def get_subscribed_thing(self, thing_id: str) -> Thing:
         warnings.warn('get_subscribed_thing', DeprecationWarning)

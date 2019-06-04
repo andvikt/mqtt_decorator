@@ -64,6 +64,7 @@ class App(object):
     async def _start(self):
         for x in self.get_things():
             x._app = self
+            await x.start()
         for x in self.get_bindings():
             x._app = self
 

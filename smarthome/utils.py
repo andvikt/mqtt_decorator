@@ -2,9 +2,9 @@ import json
 
 import yaml
 from logging import getLogger
-from functools import wraps
+from functools import wraps, partial
 import asyncio
-from typing import Callable, Dict, TypeVar, Any, Generator, Tuple
+from typing import Callable, Dict, TypeVar, Any, Generator, Tuple, Union
 
 logger = getLogger('smarthome')
 _T = TypeVar('_T')
@@ -51,3 +51,29 @@ def dict_in(dct: Dict[_X, _T], *_in: _X) -> Generator[Tuple[_X, _T], None, None]
     for x, y in dct.items():
         if x in _in:
             yield x, y
+
+
+def start_callback(foo):
+    """
+    Replace call to foo with wrapper
+    When foo is called before name is recieved, then foo is sheduled to call on startup of Thing
+
+    :param foo:
+    :return:
+    """
+
+    @wraps(foo)
+    def wrapper(self, *args, **kwargs):
+        if self.name is None:
+            self.start_callbacks.append(partial(foo, self, *args, **kwargs))
+            return self
+        else:
+            return foo(self, *args, **kwargs)
+
+    return wrapper
+
+
+def str_to_bool(value: str) -> bool:
+    return value.lower().strip() == 'True' or \
+           value.lower().strip() == 'on'
+
