@@ -14,6 +14,7 @@ async def rule_counter_max_count(cond):
     async def hello(cnt):
         print('hello', cnt)
     yield hello
+    utils.stop_loops()
 
 @pytest.fixture
 async def rule_counter_max_wait(cond):
@@ -23,6 +24,7 @@ async def rule_counter_max_wait(cond):
     async def hello(cnt):
         print('hello', cnt)
     yield hello
+    utils.stop_loops()
 
 @pytest.mark.asyncio
 async def test_rule_count(cond, rule_counter_max_count):

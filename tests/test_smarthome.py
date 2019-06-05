@@ -14,9 +14,7 @@ HOST = 'm24.cloudmqtt.com'
 PORT = 14884
 
 
-
-
-@fixture(scope='module')
+@fixture()
 async def mqtt_recieve(app):
 
     client = MQTTClient()
@@ -30,7 +28,7 @@ async def mqtt_recieve(app):
     await asyncio.sleep(1)
 
 
-@fixture(scope='module')
+@fixture()
 async def app():
 
     from smarthome.things import Switch
@@ -44,6 +42,13 @@ async def app():
         def bind(self):
             self.other_switch.bind_to(self.mqtt_binding)
 
+            @utils.rule(self.hello_switch.is_on.changed, wait_for=lambda: self.hello_switch.is_on.value == True)
+            async def rule():
+                if self.hello_switch.is_on.value:
+                    print('hello')
+                else:
+                    print('by')
+
     app = MainApp()
     assert app.mqtt_binding.app == app
     assert app.hello_switch.app is app
@@ -56,7 +61,7 @@ async def app():
     yield app
     #teardown
     await app.stop()
-
+    await asyncio.sleep(1)
 
 
 @pytest.mark.asyncio

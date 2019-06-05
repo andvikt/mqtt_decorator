@@ -1,0 +1,10 @@
+listeners:
+    default:
+        max-connections: 50000
+        type: tcp
+    my-tcp-1:
+        bind: 127.0.0.1:1883
+timeout-disconnect-delay: 2
+auth:
+    plugins: ['auth.anonymous'] #List of plugins to activate for authentication among all registered plugins
+    allow-anonymous: true

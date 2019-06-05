@@ -14,6 +14,7 @@ _X = TypeVar('_X')
 
 _LOOPS = []
 
+
 def parse_raw_json(raw: str):
     try:
         return yaml.load(raw, Loader=yaml.FullLoader)
@@ -53,6 +54,7 @@ def loop_forever(foo=None, *, start_immediate=False, **kwargs):
         return wrapper
     return deco if foo is None else deco(foo)
 
+
 def dict_in(dct: Dict[_X, _T], *_in: _X) -> Generator[Tuple[_X, _T], None, None]:
     for x, y in dct.items():
         if x in _in:
@@ -82,6 +84,7 @@ def start_callback(foo):
 def str_to_bool(value: str) -> bool:
     return value.lower().strip() == 'True' or \
            value.lower().strip() == 'on'
+
 
 def rule(cond: asyncio.Condition, wait_for=None):
     """

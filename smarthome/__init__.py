@@ -97,27 +97,11 @@ class Thing(object):
                 binding.subscriptions[(self.unique_id, n)] = x
         return self
 
-
-    def __init__(self, *, bindings: list=None):
-        for x in (bindings or []):
-            x(self)
-
     @classmethod
     def get_states(cls):
         return {
             n: x for n, x in cls.__dict__.items() if isinstance(x, State)
         }
-
-    def __hash__(self):
-        return hash(self.unique_id)
-
-    def __eq__(self, other):
-        if isinstance(other, Thing):
-            return self.unique_id == other.unique_id
-        elif isinstance(other, str):
-            return self.unique_id == other
-        else:
-            return False
 
     def __set_name__(self, owner, name):
         self.name = name
@@ -190,12 +174,9 @@ class Thing(object):
         return {n: x.value for n, x in self.states.items()}
 
     async def start(self):
-        asyncio.ensure_future(self._loop())
+        utils._LOOPS.append(asyncio.ensure_future(self._loop()))
         for x in self.start_callbacks:
             x()
-
-    def __repr__(self):
-        return f'{self}'
 
     def __str__(self):
         return f'{self.__class__.__name__}.{self.name} with State:  {self.as_json()}'
