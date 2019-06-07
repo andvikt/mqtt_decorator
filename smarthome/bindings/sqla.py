@@ -15,6 +15,6 @@ class BaseThing(Base):
     thing_type = Column(Integer, ForeignKey())
 
     __mapper_args__ = {
-        'polymorphic_on': type_id,
+        'polymorphic_on': Base.type_id,
         'polymorphic_identity': 'base_device'
     }

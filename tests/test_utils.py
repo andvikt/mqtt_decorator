@@ -1,3 +1,4 @@
+import smarthome.rules
 from smarthome import utils
 import pytest
 import asyncio
@@ -9,22 +10,22 @@ async def cond():
 @pytest.fixture
 async def rule_counter_max_count(cond):
 
-    @utils.rule(cond)
-    @utils.counting(max_count=3)
+    @smarthome.rules.rule(cond)
+    @smarthome.rules.counting(max_count=3)
     async def hello(cnt):
         print('hello', cnt)
     yield hello
-    utils.stop_loops()
+    smarthome.rules.stop_loops()
 
 @pytest.fixture
 async def rule_counter_max_wait(cond):
 
-    @utils.rule(cond)
-    @utils.counting(max_wait=1)
+    @smarthome.rules.rule(cond)
+    @smarthome.rules.counting(max_wait=1)
     async def hello(cnt):
         print('hello', cnt)
     yield hello
-    utils.stop_loops()
+    smarthome.rules.stop_loops()
 
 @pytest.mark.asyncio
 async def test_rule_count(cond, rule_counter_max_count):
