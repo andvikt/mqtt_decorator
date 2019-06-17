@@ -45,3 +45,15 @@ def test_chain():
     print(list(chain()))
 
 
+@pytest.mark.asyncio
+async def test_task_cancel():
+
+    async def hello():
+        print('before task')
+        try:
+            await asyncio.wait(10000)
+        except asyncio.CancelledError:
+            print()
+
+    task = asyncio.create_task(hello())
+    task.cancel()
