@@ -8,6 +8,8 @@ from smarthome import App, utils
 import asyncio
 import astral
 from unittest.mock import patch
+import typing
+from functools import partial
 
 
 from hbmqtt.broker import Broker, _defaults
@@ -30,6 +32,7 @@ async def broker():
     yield brok
     await brok.shutdown()
 
+
 @pytest.mark.asyncio
 async def test_brok(broker):
     print(broker)
@@ -45,30 +48,9 @@ def test_chain():
     print(list(chain()))
 
 
-@pytest.mark.asyncio
-async def test_task_cancel():
 
-    async def hello():
-        print('task started')
-        try:
-            await asyncio.sleep(10000)
+async def print_coro(*args):
+    print(*args)
 
-        except asyncio.CancelledError:
-            print('task cancelled')
-            raise
-        finally:
-            print('task finished')
 
-    async def rr():
-        task = asyncio.create_task(hello())
 
-        await asyncio.sleep(0)
-
-        task.cancel()
-
-        try:
-            await task
-        except asyncio.CancelledError:
-            print('now cancelled')
-
-    await rr()

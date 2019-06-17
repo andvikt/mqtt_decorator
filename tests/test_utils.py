@@ -1,7 +1,69 @@
 import smarthome.rules
 from smarthome import utils
+from smarthome.utils.utils import loop_forever
 import pytest
 import asyncio
+
+@pytest.mark.asyncio
+async def test_task_cancel():
+
+    started = False
+    cancelled = False
+    notreached = True
+
+    async def hello():
+        nonlocal started
+        started = True
+        await asyncio.sleep(10000)
+        notreached = False
+
+    def set_cancelled():
+        nonlocal cancelled
+        cancelled = True
+
+
+    task = await utils.utils.wait_started(hello(), set_cancelled)
+    await utils.utils.cancel_all()
+    assert started and cancelled and notreached
+
+
+@pytest.mark.asyncio
+async def test_loop_forever():
+
+    cnt = 0
+
+    @loop_forever()
+    async def hello():
+        nonlocal cnt
+        cnt+=1
+        await asyncio.sleep(1)
+
+    @loop_forever
+    async def hello2():
+        nonlocal cnt
+        cnt += 1
+        await asyncio.sleep(1)
+
+    cancelled = False
+
+    def set_cancelled():
+        nonlocal cancelled
+        cancelled = True
+
+    @loop_forever(cancel_cb=set_cancelled)
+    async def hello3():
+        await asyncio.sleep(1)
+
+    assert hasattr(hello2, '_is_loop')
+
+    await hello
+    await hello2
+    await hello3
+
+    await asyncio.sleep(3)
+    assert cnt == 6
+    await utils.utils.cancel_all()
+    assert cancelled==True
 
 @pytest.fixture
 async def cond():
