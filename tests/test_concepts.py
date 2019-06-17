@@ -49,11 +49,26 @@ def test_chain():
 async def test_task_cancel():
 
     async def hello():
-        print('before task')
+        print('task started')
         try:
-            await asyncio.wait(10000)
-        except asyncio.CancelledError:
-            print()
+            await asyncio.sleep(10000)
 
-    task = asyncio.create_task(hello())
-    task.cancel()
+        except asyncio.CancelledError:
+            print('task cancelled')
+            raise
+        finally:
+            print('task finished')
+
+    async def rr():
+        task = asyncio.create_task(hello())
+
+        await asyncio.sleep(0)
+
+        task.cancel()
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            print('now cancelled')
+
+    await rr()
