@@ -40,7 +40,8 @@ def test_sun():
     print(Sun('moscow').sunset())
 
 
+def test_chain():
+    from itertools import chain
+    print(list(chain()))
 
-@patch('smarthome.utils.CustomTime.now', new=lambda : 0)
-def test_mock():
-    print(utils.CustomTime.now())
+

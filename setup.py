@@ -10,5 +10,5 @@ setup(
     author_email='',
     description='',
     tests_require=['pytest', 'pytest-asyncio', 'pytest-mock'],
-    install_requires=['pyyaml', 'attrs', 'hbmqtt', 'astral']
+    install_requires=['pyyaml', 'attrs', 'hbmqtt', 'astral', 'git+https://github.com/andvikt/megad2.git']
 )

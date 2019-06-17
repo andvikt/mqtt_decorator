@@ -24,3 +24,12 @@ class String(Thing):
     root = 'string'
     value: State = state(0, str)
 
+@attr.s
+class Button(Thing):
+    root = 'button'
+    value: State = state(0, int)
+
+@attr.s
+class Temperature(Thing):
+    root = 'temp'
+    value: State = state(0, float)

@@ -5,14 +5,15 @@ from typing import List, Dict
 
 import attr
 
-from .rules import loop_forever, rule
+from .rules import rule
 from .const import _T, logger
 from .core import start_callback
 from . import utils
+from .utils.mixins import _MixRules
 
 
 @attr.s
-class Thing(object):
+class Thing(_MixRules):
 
     root = ''
 
@@ -41,17 +42,10 @@ class Thing(object):
                 x.name = name
                 self.states[name] = x
 
-                @rule(x.changed)
+                @self.rule(x.changed)
                 async def listen_states():
                     async with self.changed:
                         self.changed.notify_all()
-
-    @loop_forever
-    async def _loop(self):
-        await self.loop()
-
-    async def loop(self):
-        await asyncio.sleep(1)
 
     @property
     def app(self):
@@ -65,7 +59,7 @@ class Thing(object):
         return self
 
     @start_callback
-    def bind_to(self, binding, push=True, subscribe=True, event='change', *states):
+    def bind_to(self, binding, push=True, subscribe=True, event='change', *states, **data):
         """
         Bind thing to binding
         :param binding:
@@ -91,17 +85,19 @@ class Thing(object):
                 else:
                     _event = x.received_command
 
-                @rule(_event)
+                @self.rule(_event)
                 async def push():
-                    await binding.push(x)
+                    await binding.push(x, **data)
 
             # subscribe
             if subscribe:
                 binding.subscriptions[(self.unique_id, n)] = x
+                binding.subscribe_data[(self.unique_id, n)] = data
         return self
 
     @classmethod
     def get_states(cls):
+        from .state import State
         return {
             n: x for n, x in cls.__dict__.items() if isinstance(x, State)
         }
@@ -122,10 +118,14 @@ class Thing(object):
     def as_json(self):
         return {n: x.value for n, x in self.states.items()}
 
-    async def start(self):
-        asyncio.ensure_future(self._loop())
-        for x in self.start_callbacks:
-            x()
 
     def __str__(self):
         return f'{self.__class__.__name__}.{self.name} with State:  {self.as_json()}'
+
+    async def start(self):
+        for x in self.start_callbacks:
+            if asyncio.iscoroutinefunction(x):
+                await x()
+            else:
+                x()
+        await super().start()

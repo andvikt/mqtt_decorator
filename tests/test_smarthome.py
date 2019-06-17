@@ -90,11 +90,6 @@ async def conf():
     yield _conf
 
 
-@fixture()
-
-async def mocked_conf():
-    mocker.patch('datetime.datetime.now')
-
 @fixture(scope='module')
 async def app_load(conf):
     app = App.from_module('test_app', conf)
@@ -109,9 +104,7 @@ async def app(app_load, conf):
     assert conf.mqtt_binding.app == app
     assert conf.hello_switch.app is app
     assert conf.hello_switch.is_on.thing is conf.hello_switch
-
     assert conf.hello_switch.is_on is not conf.other_switch.is_on
-
     await app.start()
 
     yield app

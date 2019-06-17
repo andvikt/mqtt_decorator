@@ -1,65 +1,48 @@
 import asyncio
-from datetime import datetime
-from functools import wraps
 from typing import Callable, Union, Awaitable, Any
-from .state import StateTracker
+import typing
+
+from .utils import loop_forever
 from .utils.utils import TimeTracker, CustomTime
+from .state import StateTracker
 
 _LOOPS = []
 
 RuleType = Union[asyncio.Condition, Awaitable, StateTracker, TimeTracker]
 
 
-def loop_forever(foo=None, *, start_immediate=False, once=False, **kwargs):
+async def get_awaitable(foo: Union[RuleType, Callable[[], RuleType]], loop: loop_forever) \
+        -> typing.Union[Awaitable, asyncio.Condition]:
     """
-    Wraps a foo in endless while True loop
+
     :param foo:
-    :param start_immediate: if True, immediatly ensure_future, return Future object
-    :param once: if True, end execution as soon as awaited
+    :param add_child: callback for adding child loop
     :return:
     """
-    def deco(foo):
-        assert asyncio.iscoroutinefunction(foo), f'Loop forever can decorate only async functions'
-        @wraps(foo)
-        async def wrapper(*args, **kwargs):
-            try:
-                while True:
-                    if asyncio.iscoroutinefunction(foo):
-                        await foo(*args, **kwargs)
-                    elif asyncio.iscoroutine(foo):
-                        await foo
-                    elif isinstance(foo, Callable):
-                        foo(*args, **kwargs)
-                    if once:
-                        _LOOPS.remove(ftr)
-                        return
-            except asyncio.CancelledError:
-                _LOOPS.remove(ftr)
+    from .state import StateTracker
+    from .utils.condition_any import ConditionAny
 
-        if start_immediate:
-            ftr =  asyncio.ensure_future(wrapper(**kwargs))
-            _LOOPS.append(ftr)
-            return ftr
-        return wrapper
-    return deco if foo is None else deco(foo)
-
-
-def get_awaitable(foo: Union[RuleType, Callable[[], RuleType]]) -> Awaitable:
     if isinstance(foo, asyncio.Condition):
-        return foo.wait()
+        return foo
     elif isinstance(foo, Awaitable):
         return foo
-    elif isinstance(foo, StateTracker):
-        return foo.cond
+    elif isinstance(foo, (StateTracker, ConditionAny)):
+        cond = foo.cond
+        await foo.start()
+        loop.stob_cb = foo.stop()
+        return cond
     elif isinstance(foo, TimeTracker):
         return foo.wait()
     elif isinstance(foo, Callable):
-        return get_awaitable(foo())
+        return await get_awaitable(foo(), loop=loop)
     else:
         raise TypeError(f'Rule does not support {foo} of type: {type(foo)}')
 
 
-def rule(cond: Union[RuleType, Callable[[], RuleType]], once=False):
+def rule(cond: Union[RuleType, Callable[[], RuleType]]
+         , once=False
+         , start_immediate=False
+         ) -> loop_forever:
     """
     Rule-decorator
     When foo is decorated with rule, it is sheduled to run in endless loop awating on event
@@ -74,16 +57,33 @@ def rule(cond: Union[RuleType, Callable[[], RuleType]], once=False):
             getting new condition
     :param once: if True, rule will be triggered only once, forced if con is instance of TimeTracker
     :param wait_for: if passed, wait_for will be used instead of wait, wait_for will be passed to wait_for
-    :return: asyncio.Task, can be cancelled later
+    :param bool start_immediate: if True, start rule immediate
+    :return: asyncio.Task: can be cancelled later
     """
-    if isinstance(once, TimeTracker):
+    from .utils.condition_any import ConditionAny
+
+    if isinstance(cond, TimeTracker):
         once=True
-    def deco(foo):
+
+    def deco(foo) -> loop_forever:
         assert asyncio.iscoroutinefunction(foo), f'Rule can decorate only async functions'
-        @loop_forever(start_immediate=True, once=once)
-        async def wrap():
-            async with cond:
-                await get_awaitable(cond)
+        @loop_forever(
+                start_immediate=start_immediate
+                , once=once
+                , self_forward=True
+                , comment=f'Rule for {cond}'
+        )
+        async def wrap(loop: loop_forever):
+            _cond = await get_awaitable(cond, loop)
+            if not loop.started.is_set():
+                loop.started.set()
+            if isinstance(_cond, (asyncio.Condition, ConditionAny)):
+                async with _cond:
+                    await _cond.wait()
+                    await foo()
+            else:
+                await _cond
+                await foo()
         return wrap
     return deco
 
@@ -105,7 +105,7 @@ def counting(max_count = None, max_wait=None):
             nonlocal cnt
             nonlocal last_time
             if max_wait:
-                if (CustomTime.now() - last_time).seconds >= max_wait:
+                if (CustomTime.now() - last_time).total_seconds() >= max_wait:
                     cnt = 0
             if max_count:
                 if cnt>=max_count:

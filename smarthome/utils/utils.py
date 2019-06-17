@@ -26,7 +26,7 @@ class TimeTracker:
         return cls(CustomTime.now())
 
     async def wait(self):
-        sleep = (self.time - CustomTime.now()).seconds
+        sleep = (self.time - CustomTime.now()).total_seconds()
         if sleep > 0:
             await asyncio.sleep(sleep)
 

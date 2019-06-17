@@ -1,6 +1,7 @@
 from ..const import _T
 from ..thing import Thing
 from ..state import State
+from ..utils.mixins import _MixLoops
 from typing import List, Callable, Dict, Generic, DefaultDict, Tuple
 from logging import getLogger
 import asyncio
@@ -8,13 +9,14 @@ from threading import Lock
 import queue
 import warnings
 from collections import defaultdict
+import attr
 
 logger = getLogger(__name__)
 
 MODE_ASYNC = 1
 MODE_SYNC = 2
 
-class Binding(Generic[_T]):
+class Binding(Generic[_T], _MixLoops):
 
     # if you want to protect binding from push after updates, set it to False
     eho_safe: bool = False
@@ -49,36 +51,6 @@ class Binding(Generic[_T]):
             raise RuntimeError('app is not set for')
         return self._app
 
-    def bind(self
-             , push=True
-             , subscribe=True
-             , subscribe_data: dict = None
-             , request = False
-             , *args
-             , thing: _T = None
-             , **kwargs) -> _T:
-        """
-        Must return thing with new push-callback
-        :param thing:
-        :param push: whether to push data from thing
-        :param subscribe: whether to subscribe thing to binding's updates
-        :param request: whether to provide a thing a request callback
-        :return:
-        """
-        warnings.warn('Will not use bind, use thing.bind_to instead', DeprecationWarning)
-        assert thing is not None, f'{self}: thing should be provided'
-        if isinstance(thing, (type, Callable)):
-            thing = thing(*args, **kwargs)
-        thing: Thing = thing
-        if push:
-            thing.push_bindings.append(self)
-        if subscribe:
-            self.subscribe_data[thing] = subscribe_data
-        if request:
-            thing.request_bindings.append(self)
-        thing: _T = thing
-        logger.debug(f'{thing} binded to {self}')
-        return thing
 
     async def trigger_subscription(self, thing_id: str, state_name: str, value, is_command=False):
         logger.debug(f'Trigger {thing_id}.{state_name} = {value} from {self.name}')
@@ -117,24 +89,33 @@ class Binding(Generic[_T]):
         """
         raise NotImplementedError
 
-    async def push(self, state: State):
+    async def push(self, state: State, **data):
         raise NotImplementedError
 
     async def _start(self):
         if self.app is None:
             raise RuntimeError(f'could not start binding {self}, it is not yet connected to the app, please '
                                f'define it inside app class and istanciate the app')
-        if asyncio.iscoroutinefunction(self.start):
-            ret = await self.start() is True
-            self.sync_mode = MODE_ASYNC
-        else:
-            ret = await self.app.async_run(self.start)
-            self.sync_mode = MODE_SYNC
+        ret = await self.start_binding()
         if ret is True:
+            self.loop_forever()(self._loop)
+            await _MixLoops.start(self)
             logger.info(f'binding {self} started')
             return ret
+        else:
+            warnings.warn(f'{self.name} binding did not started')
 
-    async def start(self) -> bool:
+
+    async def _loop(self):
+        logger.debug(f'{self.name} binding has no loop')
+        await asyncio.sleep(60 * 60 * 24)
+
+    async def _stop(self):
+        await _MixLoops.stop(self)
+        await self.stop_binding()
+
+
+    async def start_binding(self) -> bool:
         """
         Can be async or usual sync-function. In case of usual function, ThreadPool will be used to mimic async-work
         When succesfull finish, must return True
@@ -142,5 +123,5 @@ class Binding(Generic[_T]):
         """
         raise NotImplementedError
 
-    def stop(self):
+    async def stop_binding(self):
         raise NotImplementedError

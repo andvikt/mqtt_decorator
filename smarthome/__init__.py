@@ -1,7 +1,8 @@
 from . import utils
 from smarthome.thing import Thing
 from smarthome.state import State
-from .rules import loop_forever, rule
+from .rules import rule
+from smarthome.utils.infinite_loop import loop_forever
 from . import core
 from . import const
 from . import things

@@ -1,4 +1,3 @@
-from ..rules import loop_forever
 from . import Binding
 from ..state import State
 from typing import TypeVar, Pattern, Callable
@@ -7,6 +6,7 @@ from hbmqtt.mqtt import constants as mqtt_const
 from hbmqtt.session import ApplicationMessage
 from logging import getLogger
 import warnings
+import attr
 
 import re
 import asyncio
@@ -86,17 +86,13 @@ class MqttBinding(Binding):
         )
 
     async def start(self):
-
         await self.mqtt.connect(self.uri)
         await self.mqtt.subscribe([(self.subs_topic, mqtt_const.QOS_1)])
         logger.debug(f'{self.name} connected and suscribed to {self.subs_topic}')
 
-        @loop_forever(start_immediate=True)
-        async def loop():
-            msg = await self.mqtt.deliver_message()
-            await self.handle_msg(msg)
-
-        self.loop_to_stop = loop
+    async def _loop(self):
+        msg = await self.mqtt.deliver_message()
+        await self.handle_msg(msg)
 
     async def handle_msg(self, msg: ApplicationMessage):
         logger.debug(f'{self} handle {msg.topic}: {msg.data}')
@@ -115,9 +111,8 @@ class MqttBinding(Binding):
             return
         await self.trigger_subscription(thing_id, state_name, value=msg.data.decode())
 
-    async def stop(self):
+    async def stop_binding(self):
         await self.mqtt.unsubscribe([self.subs_topic])
-        self.loop_to_stop.cancel()
         try:
             while True:
                 task: asyncio.Future = self.mqtt.client_tasks.pop()
