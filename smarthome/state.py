@@ -12,273 +12,156 @@ from itertools import chain
 from .utils.infinite_loop import loop_forever
 from .utils.mixins import _MixRules, _MixLoops
 from .utils.condition_any import ConditionAny
+from asyncio_primitives import CustomCondition, utils as async_utils
+from .utils.proxy import LambdaProxy
 
 
-class OperatorMixin:
-
-    track_other_states: typing.List = None
-
-    def modificate(self, modif, state=None):
-
-        return StateModificator(source=self
-                                , modif=modif
-                                , other=state
-                                , track_other_states=self.track_other_states)
-
-    def __add__(self, other):
-        if isinstance(other, State):
-            return self.modificate(lambda x: x + other.value, other)
-        else:
-            return self.modificate(lambda x: x + other)
-
-    def __sub__(self, other):
-        if isinstance(other, State):
-            return self.modificate(lambda x: x - other.value, other)
-        else:
-            return self.modificate(lambda x: x - other)
-
-    def __truediv__(self, other):
-        if isinstance(other, State):
-            return self.modificate(lambda x: x / other.value, other)
-        else:
-            return self.modificate(lambda x: x / other)
-
-    def __mul__(self, other):
-        if isinstance(other, State):
-            return self.modificate(lambda x: x * other.value, other)
-        else:
-            return self.modificate(lambda x: x * other)
-
-@dataclass
-class State(Generic[_T], OperatorMixin):
+@dataclass(eq=False)
+class State(Generic[_T]):
     """
     Represents one of Thing's state, when called change, command or update,
     then Events are triggered accordingly, notifying all the subscribers
+
+    :var check: callable, passed to rule-creator
+
     """
-    converter: Callable[[str], _T]
-    _value: _T = None
+    converter: Callable[[str], _T] = field(default_factory=float)
+    value: _T = 0
     thing: Union[_ThingT] = field(default=None, init=False, repr=True)
     name: str = field(default=None, init=False, repr=True)
-    changed: asyncio.Condition = field(default_factory=asyncio.Condition, init=False, repr=False)
-    received_update: asyncio.Condition = field(default_factory=asyncio.Condition, init=False, repr=False)
-    received_command: asyncio.Condition = field(default_factory=asyncio.Condition, init=False, repr=False)
-    modificator: Callable[[_T], _T] = None
+    changed: typing.List[CustomCondition] = field(default_factory=lambda : [CustomCondition()], init=False, repr=False)
+    received_update: typing.List[CustomCondition] = field(default_factory=lambda : [CustomCondition()], init=False, repr=False)
+    received_command: typing.List[CustomCondition] = field(default_factory=lambda : [CustomCondition()], init=False, repr=False)
+    check: typing.Callable = field(default_factory=lambda :lambda :True)
 
-    @property
-    def value(self) -> _T:
-        if self.modificator:
-            return self.modificator(self._value)
-        else:
-            return self._value
 
     async def change(self, value: _T, _from: object = None):
-        async with self.changed:
-            if isinstance(value, str):
-                value = self.converter(value)
-            if self._value != value:
-                logger.debug(f'Change {self.name} from {self._value} to {value}')
-                self._value = value
-                self.changed.notify_all()
-                return True
-            else:
-                return False
+        if isinstance(value, str):
+            value = self.converter(value)
+        if self.value != value:
+            logger.debug(f'Change {self.name} from {self.value} to {value}')
+            self.value = value
+            await async_utils.notify_many(*self.changed)
+            return True
+        else:
+            return False
 
     async def command(self, value: _T, _from: object = None):
         logger.debug(f'Command recieved for {self.thing.unique_id}.{self.name}')
-        async with self.received_command:
-            await self.change(value)
-            self.received_command.notify_all()
+        await self.change(value)
+        await async_utils.notify_many(*self.received_command)
 
     async def update(self, value: _T, _from: object = None):
         logger.debug(f'Update recieved for {self.thing.unique_id}.{self.name}')
-        async with self.received_update:
-            await self.change(value)
-            self.received_command.notify_all()
+        await self.change(value)
+        await async_utils.notify_many(*self.received_update)
+
+    async def notify_changed(self):
+        await async_utils.notify_many(*self.changed)
+
+    def rule(self):
+        return async_utils.rule(*self.changed, check=self.check)
+
+    def __add__(self, other):
+        if isinstance(other, State):
+            return self.make_proxy(value=lambda x: x + other.value, y=other)
+        else:
+            return self.make_proxy(value=lambda x: x + other)
+
+    def __sub__(self, other):
+        if isinstance(other, State):
+            return self.make_proxy(value=lambda x: x - other.value, y=other)
+        else:
+            return self.make_proxy(value=lambda x: x - other)
+
+    def __truediv__(self, other):
+        if isinstance(other, State):
+            return self.make_proxy(value=lambda x: x / other.value, y=other)
+        else:
+            return self.make_proxy(value=lambda x: x / other)
+
+    def __mul__(self, other):
+        if isinstance(other, State):
+            return self.make_proxy(value=lambda x: x * other.value, y=other)
+        else:
+            return self.make_proxy(value=lambda x: x * other)
 
     def __eq__(self, other):
-        def check():
-            if isinstance(other, State):
-                return self.value == other.value
-            else:
-                return self.value == other
         if isinstance(other, State):
-            conds = [self, other]
+            return self.make_proxy(check=lambda: self.value == other.value, y=other)
         else:
-            conds = [self]
-
-        return StateTracker(conds, check)
+            return self.make_proxy(check=lambda: self.value == other)
 
     def __ne__(self, other):
-        def check():
-            if isinstance(other, State):
-                return self.value != other.value
-            else:
-                return self.value != other
         if isinstance(other, State):
-            conds = [self, other]
+            return self.make_proxy(check=lambda: self.value != other.value, y=other)
         else:
-            conds = [self]
-
-        return StateTracker(conds, check)
+            return self.make_proxy(check=lambda: self.value != other)
 
     def __le__(self, other):
-        def check():
-            if isinstance(other, State):
-                return self.value <= other.value
-            else:
-                return self.value <= other
-
         if isinstance(other, State):
-            conds = [self, other]
+            return self.make_proxy(check=lambda: self.value <= other.value, y=other)
         else:
-            conds = [self]
-
-        return StateTracker(conds, check)
+            return self.make_proxy(check=lambda: self.value <= other)
 
     def __lt__(self, other):
-        def check():
-            if isinstance(other, State):
-                return self.value < other.value
-            else:
-                return self.value < other
-
         if isinstance(other, State):
-            conds = [self, other]
+            return self.make_proxy(check=lambda: self.value < other.value, y=other)
         else:
-            conds = [self]
-
-        return StateTracker(conds, check)
+            return self.make_proxy(check=lambda: self.value < other)
 
     def __ge__(self, other):
-        def check():
-            if isinstance(other, State):
-                return self.value >= other.value
-            else:
-                return self.value >= other
-
         if isinstance(other, State):
-            conds = [self, other]
+            return self.make_proxy(check=lambda: self.value >= other.value, y=other)
         else:
-            conds = [self]
-
-        return StateTracker(conds, check)
+            return self.make_proxy(check=lambda: self.value >= other)
 
     def __gt__(self, other):
-        def check():
-            if isinstance(other, State):
-                return self.value > other.value
-            else:
-                return self.value > other
-
         if isinstance(other, State):
-            conds = [self, other]
+            return self.make_proxy(check=lambda: self.value > other.value, y=other)
         else:
-            conds = [self]
-
-        return StateTracker(conds, check)
-
-
-@attr.s
-class StateTracker(_MixRules):
-    """
-    Tracks given states and trigger self.cond if some state changes and check callable returns True
-    """
-    states: typing.List[State] = attr.ib()
-    conditions: typing.List[asyncio.Condition] = attr.ib(factory=list, init=False)
-    check: typing.Callable[[], bool] = attr.ib()
-    _cond: ConditionAny = None
-
-
-    def __attrs_post_init__(self):
-        for x in self.states:
-            self.conditions.append(x.changed)
-            for s in (x.track_other_states or []):
-                if s.changed not in self.conditions:
-                    self.conditions.append(s.changed)
+            return self.make_proxy(check=lambda: self.value > other)
 
     def __and__(self, other):
-        if isinstance(other, StateTracker):
-            return StateTracker(self.states + other.states, lambda : self.check() and other.check())
-        elif isinstance(other, Callable):
-            sig = inspect.signature(other)
-            if len(sig.parameters) > 0:
-                raise ValueError(f'{other} must be a callable with no arguments')
-            if asyncio.iscoroutinefunction(other):
-                raise TypeError(f'{other} is coroutinefunction')
-            return StateTracker(self.states, lambda : self.check() and other())
+        if isinstance(other, State):
+            return self.make_proxy(check=lambda: self.check() and other.check(), y=other)
         else:
-            raise TypeError(f'{type(other)} argument is not supported in &| operators of StateTracker')
+            return self.make_proxy(check=lambda: self.check() and other)
 
     def __or__(self, other):
-        if isinstance(other, StateTracker):
-            return StateTracker(self.states + other.states, lambda: self.check() or other.check())
-        elif isinstance(other, Callable):
-            sig = inspect.signature(other)
-            if len(sig.parameters) > 0:
-                raise ValueError(f'{other} must be a callable with no arguments')
-            if asyncio.iscoroutinefunction(other):
-                raise TypeError(f'{other} is coroutinefunction')
-            return StateTracker(self.states, lambda: self.check() or other())
+        if isinstance(other, State):
+            return self.make_proxy(check=lambda: self.check() or other.check(), y=other)
         else:
-            raise TypeError(f'{type(other)} argument is not supported in &| operators of StateTracker')
-
-    @property
-    def cond(self) -> ConditionAny:
-        if self._cond is None:
-            self._cond = ConditionAny(self.conditions, check=self.check)
-        return self._cond
-
-    async def start(self):
-        await self.cond.start()
-        for x in self.states:
-            if isinstance(x, _MixLoops):
-                await x.start()
-        await super().start()
-
-    async def stop(self):
-        for x in self.states:
-            if isinstance(x, StateModificator):
-                await x.stop()
-        await self.cond.stop()
-        await super().stop()
+            return self.make_proxy(check=lambda: self.check() or other)
 
 
-@attr.s
-class StateModificator(_MixRules):
+    def make_proxy(self
+                   , value: typing.Union[typing.Callable[[_T], _T], _T] = None
+                   , y = None
+                   , check = None):
+        """
+        Make proxy for State. Replace value with lambda, adds conditions from other if other is State
+        :param x:
+        :param value:
+        :param y:
+        :param check:
+        :return:
+        """
+        kwargs = {}
 
-    source: typing.Union[State, OperatorMixin] = attr.ib()
-    modif: typing.Callable = attr.ib()
-    other: State = attr.ib(default=None)
-    track_other_states: typing.List[State] = attr.ib(default=None)
-    _cond: ConditionAny = None
 
-    def __attrs_post_init__(self):
-        if self.track_other_states is not None and self.other is not None:
-            self.track_other_states = self.track_other_states + [self.other]
-        elif self.other is not None:
-            self.track_other_states = [self.other]
+        if check:
+            def new_check():
+                return self.check() and check()
+            kwargs['check'] = lambda x: new_check
 
-    def value(self):
-        return self.modif(self.source._value)
+        if value is not None:
+            kwargs['value'] = value
 
-    def __getattribute__(self, item):
-        try:
-            return object.__getattribute__(self, item)
-        except AttributeError:
-            return getattr(self.source, item)
+        if isinstance(y, State):
+            kwargs.update(
+                changed=self.changed + y.changed
+                , received_update=self.received_update + y.received_update
+                , received_command=self.received_command + y.received_command)
 
-    @property
-    def changed(self) -> ConditionAny:
-        if self._cond is None:
-            self._cond = ConditionAny([
-                x.changed for x in [self.source] + self.track_other_states
-            ])
-        return self._cond
-
-    async def start(self):
-        await self._cond.start()
-        await super().start()
-
-    async def stop(self):
-        await self._cond.stop()
-        await super().stop()
+        return typing.cast(self.__class__, LambdaProxy(self, **kwargs))
