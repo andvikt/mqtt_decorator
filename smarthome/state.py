@@ -33,6 +33,7 @@ class State(Generic[_T]):
     received_update: typing.List[CustomCondition] = field(default_factory=lambda : [CustomCondition()], init=False, repr=False)
     received_command: typing.List[CustomCondition] = field(default_factory=lambda : [CustomCondition()], init=False, repr=False)
     check: typing.Callable = field(default_factory=lambda :lambda :True)
+    _str: str = 'state'
 
 
     async def change(self, value: _T, _from: object = None):
@@ -64,81 +65,83 @@ class State(Generic[_T]):
 
     def __add__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(value=lambda x: x + other.value, y=other)
+            return self.make_proxy(str_template='{x} + {y}', value=lambda x: x + other.value, y=other)
         else:
-            return self.make_proxy(value=lambda x: x + other)
+            return self.make_proxy(str_template=f'{{x}} + {other}', value=lambda x: x + other)
 
     def __sub__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(value=lambda x: x - other.value, y=other)
+            return self.make_proxy(str_template='{x} - {y}', value=lambda x: x - other.value, y=other)
         else:
-            return self.make_proxy(value=lambda x: x - other)
+            return self.make_proxy(str_template=f'{{x}} - {other}', value=lambda x: x - other)
 
     def __truediv__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(value=lambda x: x / other.value, y=other)
+            return self.make_proxy(str_template='{x} / {y}', value=lambda x: x / other.value, y=other)
         else:
-            return self.make_proxy(value=lambda x: x / other)
+            return self.make_proxy(str_template=f'{{x}} / {other}', value=lambda x: x / other)
 
     def __mul__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(value=lambda x: x * other.value, y=other)
+            return self.make_proxy(str_template='{x} * {y}', value=lambda x: x * other.value, y=other)
         else:
-            return self.make_proxy(value=lambda x: x * other)
+            return self.make_proxy(str_template=f'{{x}} * {other}', value=lambda x: x * other)
 
     def __eq__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(check=lambda: self.value == other.value, y=other)
+            return self.make_proxy(str_template='{x} = {y}', check=lambda: self.value == other.value, y=other)
         else:
-            return self.make_proxy(check=lambda: self.value == other)
+            return self.make_proxy(str_template=f'{{x}} = {other}', check=lambda: self.value == other)
 
     def __ne__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(check=lambda: self.value != other.value, y=other)
+            return self.make_proxy(str_template='{x} != {y}', check=lambda: self.value != other.value, y=other)
         else:
-            return self.make_proxy(check=lambda: self.value != other)
+            return self.make_proxy(str_template=f'{{x}} != {other}', check=lambda: self.value != other)
 
     def __le__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(check=lambda: self.value <= other.value, y=other)
+            return self.make_proxy(str_template='{x} <= {y}', check=lambda: self.value <= other.value, y=other)
         else:
-            return self.make_proxy(check=lambda: self.value <= other)
+            return self.make_proxy(str_template=f'{{x}} <= {other}', check=lambda: self.value <= other)
 
     def __lt__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(check=lambda: self.value < other.value, y=other)
+            return self.make_proxy(str_template='{x} < {y}', check=lambda: self.value < other.value, y=other)
         else:
-            return self.make_proxy(check=lambda: self.value < other)
+            return self.make_proxy(str_template=f'{{x}} < {other}', check=lambda: self.value < other)
 
     def __ge__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(check=lambda: self.value >= other.value, y=other)
+            return self.make_proxy(str_template='{x} >= {y}', check=lambda: self.value >= other.value, y=other)
         else:
-            return self.make_proxy(check=lambda: self.value >= other)
+            return self.make_proxy(str_template=f'{{x}} >= {other}', check=lambda: self.value >= other)
 
     def __gt__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(check=lambda: self.value > other.value, y=other)
+            return self.make_proxy(str_template='{x} > {y}', check=lambda: self.value > other.value, y=other)
         else:
-            return self.make_proxy(check=lambda: self.value > other)
+            return self.make_proxy(str_template=f'{{x}} > {other}', check=lambda: self.value > other)
 
     def __and__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(check=lambda: self.check() and other.check(), y=other)
+            return self.make_proxy(str_template='{x} and {y}', check=lambda: self.check() and other.check(), y=other)
         else:
-            return self.make_proxy(check=lambda: self.check() and other)
+            return self.make_proxy(str_template=f'{{x}} and {other}', check=lambda: self.check() and other)
 
     def __or__(self, other):
         if isinstance(other, State):
-            return self.make_proxy(check=lambda: self.check() or other.check(), y=other)
+            return self.make_proxy(str_template='{x} or {y}', check=lambda: self.check() or other.check(), y=other)
         else:
-            return self.make_proxy(check=lambda: self.check() or other)
-
+            return self.make_proxy(str_template=f'{{x}} or {other}', check=lambda: self.check() or other)
 
     def make_proxy(self
+                   , str_template: str
                    , value: typing.Union[typing.Callable[[_T], _T], _T] = None
                    , y = None
-                   , check = None):
+                   , check = None
+                   , _and=True
+                   ):
         """
         Make proxy for State. Replace value with lambda, adds conditions from other if other is State
         :param x:
@@ -147,21 +150,34 @@ class State(Generic[_T]):
         :param check:
         :return:
         """
-        kwargs = {}
 
+        if isinstance(y, State):
+            _other_str = y._str
+        else:
+            _other_str = y
+
+        new_str = f'({str_template.format(x=self._str, y=_other_str)})'
+        kwargs = {'_str': new_str}
 
         if check:
             def new_check():
-                return self.check() and check()
+                return check()
             kwargs['check'] = lambda x: new_check
+            setattr(new_check, '_str', new_str)
 
         if value is not None:
             kwargs['value'] = value
 
+
+
+
+
         if isinstance(y, State):
             kwargs.update(
-                changed=self.changed + y.changed
-                , received_update=self.received_update + y.received_update
-                , received_command=self.received_command + y.received_command)
+                changed=self.changed + [x for x in y.changed if x not in self.changed]
+                , received_update=self.received_update + [x for x in y.received_update if x not in self.received_update]
+                , received_command=self.received_command + [x for x in y.received_command if x not in self.received_command]
+            )
 
         return typing.cast(self.__class__, LambdaProxy(self, **kwargs))
+

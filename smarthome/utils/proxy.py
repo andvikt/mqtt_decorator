@@ -41,14 +41,7 @@ class LambdaProxy(typing.Generic[_T]):
     def __init__(self, wrapped: _T, **kwargs):
         self._wrapt = wrapped
         self._kwargs = kwargs
-        for x in [  '__add__', '__sub__', '__truediv__', '__mul__'
-                , '__eq__', '__ne__', '__le__', '__lt__'
-                , '__ge__', '__gt__', '__and__', '__or__']:
-            foo = getattr(wrapped.__class__, x, None) or getattr(wrapped, x, None)
-            if foo:
-                setattr(self, x, foo)
         pass
-
 
     def __getattribute__(self, item):
         __not_wrapped__ = object.__getattribute__(self, '__not_wrapped__')
@@ -104,3 +97,51 @@ class LambdaProxy(typing.Generic[_T]):
         return {
             x: getsource(value) for x, value in self._kwargs.items() if isinstance(value, typing.Callable)
         }
+
+    @property
+    def __add__(self):
+        return partial(self._wrapt.__class__.__add__, self)
+
+    @property
+    def __sub__(self):
+        return partial(self._wrapt.__class__.__sub__, self)
+
+    @property
+    def __truediv__(self):
+        return partial(self._wrapt.__class__.__truediv__, self)
+
+    @property
+    def __mul__(self):
+        return partial(self._wrapt.__class__.__mul__, self)
+
+    @property
+    def __eq__(self):
+        return partial(self._wrapt.__class__.__eq__, self)
+
+    @property
+    def __ne__(self):
+        return partial(self._wrapt.__class__.__ne__, self)
+
+    @property
+    def __le__(self):
+        return partial(self._wrapt.__class__.__le__, self)
+
+    @property
+    def __lt__(self):
+        return partial(self._wrapt.__class__.__lt__, self)
+
+    @property
+    def __ge__(self):
+        return partial(self._wrapt.__class__.__ge__, self)
+
+    @property
+    def __gt__(self):
+        return partial(self._wrapt.__class__.__gt__, self)
+
+    @property
+    def __and__(self):
+        return partial(self._wrapt.__class__.__and__, self)
+
+    @property
+    def __or__(self):
+        return partial(self._wrapt.__class__.__or__, self)
