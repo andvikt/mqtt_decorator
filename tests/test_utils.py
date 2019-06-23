@@ -133,28 +133,24 @@ async def test_complex_rule():
         task.cancel()
         await task
 
+@pytest.mark.asyncio
+async def test_max_count():
 
+    counts = []
 
-@pytest.fixture
-async def rule_counter_max_count(cond):
-    from smarthome.utils.utils import _is_rule
-    @smarthome.rules.rule(cond)
-    @smarthome.rules.counting(max_count=3)
+    @smarthome.rules.counter(max_count=3)
     async def hello(cnt):
-        print('hello', cnt)
+        counts.append(cnt)
+    await asyncio.gather(*[hello() for x in range(6)])
 
-    assert isinstance(hello, _is_rule)
-
-    ret = await hello
-    yield ret
-    ret.cancel()
+    assert counts == [0,1,2,0,1,2]
 
 
 @pytest.fixture
 async def rule_counter_max_wait(cond):
     from smarthome.utils.utils import _is_loop
     @smarthome.rules.rule(cond)
-    @smarthome.rules.counting(max_wait=1)
+    @smarthome.rules.counter(max_wait=1)
     async def hello(cnt):
         print('hello', cnt)
     task = await hello
