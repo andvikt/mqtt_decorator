@@ -11,6 +11,7 @@ import attr
 import re
 import asyncio
 from dataclasses import dataclass
+from asyncio_primitives import utils as autils
 
 logger = getLogger('mqtt_binding')
 
@@ -51,6 +52,7 @@ class MqttBinding(Binding):
         self.auth = auth or ''
         self.loop_to_stop: asyncio.Future = None
         self._parse_topic: Pattern = None
+        super().__init__()
 
     @property
     def parse_topic(self):
@@ -77,7 +79,7 @@ class MqttBinding(Binding):
     def uri(self):
         return f'mqtt://{self.auth}@{self.host}{self.port}'
 
-    async def push(self, state: State):
+    async def push(self, state: State, **data):
         logger.debug(f'push {state}')
         await self.mqtt.publish(
             topic=DEF_OUT_TOPIC.format(app_name=self.app.name, thing_id=state.thing.unique_id, state_name=state.name)
@@ -85,11 +87,14 @@ class MqttBinding(Binding):
             , qos=mqtt_const.QOS_1
         )
 
-    async def start(self):
+    async def start_binding(self) -> bool:
         await self.mqtt.connect(self.uri)
         await self.mqtt.subscribe([(self.subs_topic, mqtt_const.QOS_1)])
         logger.debug(f'{self.name} connected and suscribed to {self.subs_topic}')
+        self._tasks.append(await self._loop())
+        return True
 
+    @autils.endless_loop
     async def _loop(self):
         msg = await self.mqtt.deliver_message()
         await self.handle_msg(msg)

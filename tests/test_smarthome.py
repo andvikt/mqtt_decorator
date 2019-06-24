@@ -19,7 +19,6 @@ HOST = 'm24.cloudmqtt.com'
 PORT = 14884
 
 
-
 @fixture(scope='module')
 async def broker():
     config = copy(_defaults)
@@ -36,6 +35,7 @@ async def broker():
     await brok.start()
     yield brok
     await brok.shutdown()
+
 
 @yield_fixture(scope='module')
 def event_loop():
@@ -92,7 +92,7 @@ async def conf():
 
 @fixture(scope='module')
 async def app_load(conf):
-    app = App.from_module('test_app', conf)
+    app = await App.from_module('test_app', conf)
     yield app
 
 
@@ -110,7 +110,6 @@ async def app(app_load, conf):
     yield app
     #teardown
     await app.stop()
-    await asyncio.sleep(1)
 
 
 @pytest.mark.asyncio

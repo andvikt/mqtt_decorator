@@ -2,6 +2,7 @@ import asyncio
 import warnings
 from threading import Lock as ThreadLock
 from typing import List, Dict
+import typing
 
 import attr
 
@@ -12,13 +13,27 @@ from . import utils
 from .utils.mixins import _MixRules
 
 
-@attr.s
+class Group:
+
+    def __init__(self, *things):
+        self.things: typing.List[Thing] = []
+        self.things.extend(things)
+
+
 class Thing(_MixRules):
 
     root = ''
 
-    def __attrs_post_init__(self):
+    def __init__(self, *args):
         from .state import State
+
+        super().__init__()
+        # add groups
+        self.groups = []
+        for x in args:
+            if isinstance(x, Group):
+                self.groups.append(x)
+                x.things.append(self)
 
         if not asyncio.get_event_loop().is_running():
             warnings.warn('Do not init things outside event loop', DeprecationWarning)
@@ -26,26 +41,24 @@ class Thing(_MixRules):
         from .bindings.binding import Binding
         self.push_bindings: List[Binding] = []
         self.request_bindings: List[Binding] = []
-        self.data_lock = asyncio.Lock()
-        self.thread_lock = ThreadLock()
-        self.que = asyncio.Queue()
         self.name = None
         self._app: App = None
         self._bindings: List[Binding] = []
         self.states: Dict[str, State] = {}
         self.start_callbacks = []
-        self.changed = asyncio.Condition()
 
-        for name, x in self.__dict__.items():
-            if isinstance(x, State):
-                x.thing = self
-                x.name = name
-                self.states[name] = x
+        # add states
+        for name, x in self.__class__.__dict__.items():
+            if hasattr(x, '_state'):
+                state = x()
+                setattr(self, name, state)
+                state.thing = self
+                state.name = name
+                self.states[name] = state
 
-                @self.rule(x.changed)
-                async def listen_states():
-                    async with self.changed:
-                        self.changed.notify_all()
+        for x in self.groups:
+            if self not in x.things:
+                x.things.append(self)
 
     @property
     def app(self):
@@ -93,6 +106,7 @@ class Thing(_MixRules):
             if subscribe:
                 binding.subscriptions[(self.unique_id, n)] = x
                 binding.subscribe_data[(self.unique_id, n)] = data
+        logger.debug(f'{self} binded to {binding}')
         return self
 
     @classmethod
@@ -118,9 +132,9 @@ class Thing(_MixRules):
     def as_json(self):
         return {n: x.value for n, x in self.states.items()}
 
-
     def __str__(self):
         return f'{self.__class__.__name__}.{self.name} with State:  {self.as_json()}'
+
 
     async def start(self):
         for x in self.start_callbacks:

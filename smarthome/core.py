@@ -18,12 +18,11 @@ def conf(mod: ModuleType):
 
 def state(default, converter=None):
     from .state import State
+    ret = partial(State, converter or float, default)
+    setattr(ret, '_state', True)
     return cast(
-        State,
-        attr.ib(
-            factory=partial(State, converter or float, default)
-            , init=False
-        )
+        State
+        , ret
     )
 
 

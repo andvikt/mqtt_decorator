@@ -6,7 +6,7 @@ import warnings
 from .. import const
 from typing import Callable
 import asyncio
-from ..utils.mixins import _MixLoops
+from asyncio_primitives import utils as autils
 
 DEF_OW_UPDATE_INTERVAL = 60
 
@@ -19,6 +19,7 @@ class MegaBinding(Binding):
         self.devices = {}
         self.ow_bus: OneWireBus = OneWireBus(self.mega, ow_port)
         self.ow_update_interval = ow_update_interval
+        super().__init__()
 
     def get_device(self, id, factory: Callable[[], const._T], *args, **kwargs) -> const._T:
         if id in self.devices:
@@ -27,7 +28,7 @@ class MegaBinding(Binding):
             self.devices[id] = dev = factory(*args, **kwargs)
             return dev
 
-    async def start(self) -> bool:
+    async def start_binding(self) -> bool:
 
         # map callbacks
         for key, val in self.subscriptions.items():
@@ -40,8 +41,7 @@ class MegaBinding(Binding):
 
                 @self.mega.map_callback_deco(_key)
                 async def callback(*args):
-                    async with val.changed:
-                        val.changed.notify_all()
+                    await val.notify_changed()
 
             # for temperatures
             elif isinstance(val.thing, things.Temperature):
@@ -61,12 +61,12 @@ class MegaBinding(Binding):
 
         # start 1-wire bus
         if self.ow_bus:
-            @self.loop_forever()
+            @autils.endless_loop
             async def update_temp():
                 await asyncio.sleep(self.ow_update_interval)
                 await self.ow_bus.update()
 
-            await update_temp.start()
+            self._tasks.append(await update_temp())
 
         return True
 

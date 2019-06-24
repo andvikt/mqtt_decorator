@@ -7,28 +7,9 @@ import attr
 from astral import Astral
 
 from .utils import TimeTracker, CustomTime
-
-
-class partial_add(Generic[_T]):
-
-    def __init__(self, *args, **kwargs):
-        self.part = partial(*args, **kwargs)
-        self.add = []
-        self.sub = []
-
-    def __add__(self, other):
-        self.add.append(other)
-
-    def __sub__(self, other):
-        self.sub.append(other)
-
-    def __call__(self, *args, **kwargs) -> _T:
-        ret = self.part.__call__(*args, **kwargs)
-        for x in self.add:
-            ret += x
-        for x in self.sub:
-            ret -= x
-        return ret
+from functools import wraps
+from asyncio_primitives import utils as autils
+import asyncio
 
 
 @attr.s
@@ -39,26 +20,35 @@ class Sun:
     def __attrs_post_init__(self):
         self.loc = Astral().geocoder[self.city_name]
 
-    def getter(self, name, date=None):
+    def get_time(self, name, date=None, offset:timedelta = timedelta(seconds=0))->TimeTracker:
         date = date or CustomTime.now().date()
-        next_time = self.loc.sun(date)[name]
-        if next_time <= CustomTime.now():
-            date = date + timedelta(days=1)
+        next_time = self.loc.sun(date)[name] + offset
+        while next_time <= CustomTime.now():
+            date = date + timedelta(days=1) + offset
             next_time = self.loc.sun(date)[name]
         return TimeTracker(next_time)
 
-    @property
-    def sunrise(self) -> partial_add[TimeTracker]:
-        return partial_add(self.getter, name='sunrise')
+    def rule(self, name, offset:timedelta = timedelta(seconds=0)):
+        assert name in ['sunrise', 'dusk', 'sunset', 'dawn']
+        def deco(foo):
+            @wraps(foo)
+            async def wrapper(*args, **kwargs) -> asyncio.Task:
+                @autils.endless_loop
+                async def _loop():
+                    await self.get_time(name, offset=offset).wait()
+                    await autils.async_run(foo, *args, **kwargs)
+                return await _loop()
+            return wrapper
+        return deco
 
-    @property
-    def dusk(self, date=None) -> partial_add[TimeTracker]:
-        return partial_add(self.getter, name='dusk')
+    def rule_sunrise(self, offset = timedelta(seconds=0)):
+        return self.rule('sunrise', offset=offset)
 
-    @property
-    def sunset(self, date=None) -> partial_add[TimeTracker]:
-        return partial_add(self.getter, name='sunset')
+    def rule_dusk(self, offset = timedelta(seconds=0)):
+        return self.rule('dusk', offset=offset)
 
-    @property
-    def dawn(self, date=None) -> partial_add[TimeTracker]:
-        return partial_add(self.getter, name='dawn')
+    def rule_sunset(self, offset = timedelta(seconds=0)):
+        return self.rule('sunset', offset=offset)
+
+    def rule_dawn(self, offset = timedelta(seconds=0)):
+        return self.rule('dawn', offset=offset)

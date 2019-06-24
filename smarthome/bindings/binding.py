@@ -1,7 +1,7 @@
 from ..const import _T
-from ..thing import Thing
+from ..thing import Thing, Group
 from ..state import State
-from ..utils.mixins import _MixLoops
+from ..utils.mixins import _MixRules
 from typing import List, Callable, Dict, Generic, DefaultDict, Tuple
 from logging import getLogger
 import asyncio
@@ -16,14 +16,10 @@ logger = getLogger(__name__)
 MODE_ASYNC = 1
 MODE_SYNC = 2
 
-class Binding(Generic[_T], _MixLoops):
+class Binding(Generic[_T], _MixRules):
 
     # if you want to protect binding from push after updates, set it to False
     eho_safe: bool = False
-
-    def __set_name__(self, owner, name):
-        self.name = name
-        self._app = owner
 
     def __repr__(self):
         return self.__str__()
@@ -36,10 +32,6 @@ class Binding(Generic[_T], _MixLoops):
         from .. import State
         obj = object.__new__(cls)
         obj.subscribe_data: Dict[Thing, dict] = {}
-        obj.data_lock = Lock()
-        obj.async_que = asyncio.Queue() # todo: add que managers for sync/async modes
-        obj.thread_que = queue.Queue()
-        obj.sync_mode = MODE_ASYNC
         #  subscriptions are asyncio.Condition, keys are thing_id, state_name
         obj.subscriptions: Dict[Tuple[str, str], State] = {}
         obj._app: App = None
@@ -50,7 +42,6 @@ class Binding(Generic[_T], _MixLoops):
         if self._app is None:
             raise RuntimeError('app is not set for')
         return self._app
-
 
     async def trigger_subscription(self, thing_id: str, state_name: str, value, is_command=False):
         logger.debug(f'Trigger {thing_id}.{state_name} = {value} from {self.name}')
@@ -70,16 +61,6 @@ class Binding(Generic[_T], _MixLoops):
                 return x
         logger.warning(f'Could not find {thing_id} in {self}')
 
-    async def update_thing(self, thing: Thing, data: dict):
-        """
-        Bindings should use this method to update thing safely, thread-safe
-        :param thing:
-        :param data:
-        :return:
-        """
-        warnings.warn('update_thing', DeprecationWarning)
-        logger.debug(f'update {thing} with {data}')
-        await thing.async_update(data, from_binding=self)
 
     async def thing_request(self, thing: Thing) -> dict:
         """
@@ -98,20 +79,14 @@ class Binding(Generic[_T], _MixLoops):
                                f'define it inside app class and istanciate the app')
         ret = await self.start_binding()
         if ret is True:
-            self.loop_forever()(self._loop)
-            await _MixLoops.start(self)
+            await _MixRules.start(self)
             logger.info(f'binding {self} started')
             return ret
         else:
             warnings.warn(f'{self.name} binding did not started')
 
-
-    async def _loop(self):
-        logger.debug(f'{self.name} binding has no loop')
-        await asyncio.sleep(60 * 60 * 24)
-
     async def _stop(self):
-        await _MixLoops.stop(self)
+        await _MixRules.stop(self)
         await self.stop_binding()
 
 
@@ -125,3 +100,24 @@ class Binding(Generic[_T], _MixLoops):
 
     async def stop_binding(self):
         raise NotImplementedError
+
+    def bind_to(self, *things):
+        """
+        Bind to several things
+        :param things: can be list of Things, list of Groups or list of Tuple[[Thing, Group], {**bind_data}]
+        :return:
+        """
+        for x in things:
+            if isinstance(x, Thing):
+                x.bind_to(self)
+            if isinstance(x, Group):
+                for t in x.things:
+                    t.bind_to(self)
+            elif isinstance(x, Tuple):
+                thing= x[0]
+                kwargs: dict = x[1]
+                if isinstance(thing, Thing):
+                    thing.bind_to(self, **kwargs)
+                elif isinstance(thing, Group):
+                    for t in thing.things:
+                        t.bind_to(self, **kwargs)

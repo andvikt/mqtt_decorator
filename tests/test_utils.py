@@ -145,18 +145,20 @@ async def test_max_count():
 
     assert counts == [0,1,2,0,1,2]
 
+    @smarthome.rules.counter(max_wait=0.3)
+    async def fast_count(cnt):
+        counts.append(cnt)
 
-@pytest.fixture
-async def rule_counter_max_wait(cond):
-    from smarthome.utils.utils import _is_loop
-    @smarthome.rules.rule(cond)
-    @smarthome.rules.counter(max_wait=1)
-    async def hello(cnt):
-        print('hello', cnt)
-    task = await hello
-    assert isinstance(hello, _is_loop)
-    yield hello
-    task.cancel()
+    counts.clear()
+
+    await fast_count()
+    await asyncio.sleep(0.25)
+    await fast_count()
+    await asyncio.sleep(0.25)
+    await fast_count()
+    await asyncio.sleep(0.35)
+    await fast_count()
+    assert counts == [0,1,2,0]
 
 
 @pytest.mark.asyncio
@@ -166,13 +168,13 @@ async def test_timeshed():
     started = utils.CustomTime.now()
     ended: utils.CustomTime = None
 
-    @rule(utils.TimeTracker.now() + timedelta(seconds=1))
+    @rule(utils.TimeTracker.now() + timedelta(seconds=0.5))
     async def hey():
         nonlocal ended
         ended = utils.CustomTime.now()
 
-    await hey
-    await asyncio.sleep(3)
+    await hey()
+    await asyncio.sleep(1.2)
     assert round((ended - started).total_seconds()) == 1
 
 
@@ -182,13 +184,16 @@ async def test_timeshed_multi():
     from datetime import timedelta
     hitcnt = 0
 
-    @rule(lambda: utils.TimeTracker.now() + timedelta(seconds=0.3))
-    async def hey():
+    @utils.TimeTracker.repeat(time_interval=timedelta(seconds=0.3))
+    async def hey(x, y):
         nonlocal hitcnt
         hitcnt+=1
+        assert x == 1, y==2
 
-    await hey.start()
+    task = await hey(1, y=2)
     await asyncio.sleep(1)
     assert hitcnt == 3
-    await hey.stop()
+    with pytest.raises(asyncio.CancelledError):
+        task.cancel()
+        await task
 

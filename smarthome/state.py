@@ -4,14 +4,7 @@ from typing import Generic, Callable, Union
 
 from .const import _T, logger, _ThingT
 
-import attr
 import typing
-import inspect
-from copy import copy
-from itertools import chain
-from .utils.infinite_loop import loop_forever
-from .utils.mixins import _MixRules, _MixLoops
-from .utils.condition_any import ConditionAny
 from asyncio_primitives import CustomCondition, utils as async_utils
 from .utils.proxy import LambdaProxy
 
@@ -167,10 +160,6 @@ class State(Generic[_T]):
 
         if value is not None:
             kwargs['value'] = value
-
-
-
-
 
         if isinstance(y, State):
             kwargs.update(
