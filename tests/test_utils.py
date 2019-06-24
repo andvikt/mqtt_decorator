@@ -2,7 +2,6 @@ from logging import basicConfig, DEBUG
 basicConfig(level=DEBUG)
 import smarthome.rules
 from smarthome import utils, const
-from smarthome.utils.utils import loop_forever
 import pytest
 import asyncio
 import typing

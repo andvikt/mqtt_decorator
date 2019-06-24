@@ -3,7 +3,7 @@ listeners:
         max-connections: 50000
         type: tcp
     my-tcp-1:
-        bind: 127.0.0.1:1883
+        bind: 127.0.0.1:1889
 timeout-disconnect-delay: 2
 auth:
   allow-anonymous: true

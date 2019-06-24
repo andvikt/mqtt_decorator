@@ -89,13 +89,12 @@ class MqttBinding(Binding):
         await self.mqtt.publish(
             topic=DEF_OUT_TOPIC.format(app_name=self.app.name, thing_id=state.thing.unique_id, state_name=state.name)
             , message=str(state.value).encode()
-            , qos=mqtt_const.QOS_1
         )
 
     async def start_binding(self) -> bool:
         global _cnt
         await self.mqtt.connect(self.uri)
-        await self.mqtt.subscribe([(self.subs_topic, mqtt_const.QOS_1)])
+        await self.mqtt.subscribe([(self.subs_topic, mqtt_const.QOS_0)])
         logger.debug(f'{self.name} connected and suscribed to {self.subs_topic}')
         self._tasks.append(await self._loop())
         return True
