@@ -4,11 +4,12 @@ import asyncio
 from .thing import Thing
 from .bindings.binding import Binding
 import typing
-from .const import logger
+from .const import logger, Logger
 import types
 import typing
 from asyncio_primitives import utils as autils
 
+logger = logger.getChild('app')
 
 class App(object):
 

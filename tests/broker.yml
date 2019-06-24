@@ -6,5 +6,11 @@ listeners:
         bind: 127.0.0.1:1883
 timeout-disconnect-delay: 2
 auth:
-    plugins: ['auth.anonymous'] #List of plugins to activate for authentication among all registered plugins
-    allow-anonymous: true
+  allow-anonymous: true
+plugins:
+  - auth_file
+  - auth_anonymous
+topic-check:
+  enabled': True
+  plugins':
+    - topic_taboo

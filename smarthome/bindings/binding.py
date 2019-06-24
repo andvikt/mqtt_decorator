@@ -3,7 +3,7 @@ from ..thing import Thing, Group
 from ..state import State
 from ..utils.mixins import _MixRules
 from typing import List, Callable, Dict, Generic, DefaultDict, Tuple
-from logging import getLogger
+from logging import getLogger, Logger
 import asyncio
 from threading import Lock
 import queue
@@ -11,7 +11,7 @@ import warnings
 from collections import defaultdict
 import attr
 
-logger = getLogger(__name__)
+logger: Logger = getLogger(__name__).getChild('binding')
 
 MODE_ASYNC = 1
 MODE_SYNC = 2

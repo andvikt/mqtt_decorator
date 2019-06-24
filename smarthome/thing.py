@@ -7,11 +7,11 @@ import typing
 import attr
 
 from .rules import rule
-from .const import _T, logger
+from .const import _T, logger, Logger
 from .core import start_callback
 from . import utils
 from .utils.mixins import _MixRules
-
+from asyncio_primitives import utils as autils
 
 class Group:
 
@@ -19,6 +19,7 @@ class Group:
         self.things: typing.List[Thing] = []
         self.things.extend(things)
 
+logger: Logger = logger.getChild('things')
 
 class Thing(_MixRules):
 
@@ -99,6 +100,8 @@ class Thing(_MixRules):
                     _event = x.received_command
 
                 @self.rule(_event)
+                @autils.set_name(f'push {self.unique_id}.{n}->{binding}')
+                @autils.set_logger(logger.getChild(self.unique_id))
                 async def push():
                     await binding.push(x, **data)
 

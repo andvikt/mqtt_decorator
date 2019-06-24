@@ -1,4 +1,4 @@
-from . import Binding
+from .binding import Binding, logger, Logger
 from ..state import State
 from typing import TypeVar, Pattern, Callable
 from hbmqtt.client import MQTTClient
@@ -13,7 +13,7 @@ import asyncio
 from dataclasses import dataclass
 from asyncio_primitives import utils as autils
 
-logger = getLogger('mqtt_binding')
+logger: Logger = logger.getChild('mqtt')
 
 _T = TypeVar('_T')
 
@@ -25,6 +25,8 @@ SUBS_OUT_TOPIC = '/{app_name}/+/+/out'
 DEF_IN_TOPIC = '/{app_name}/{thing_id}/{state_name}/in'
 SUBS_IN_TOPIC = '/{app_name}/+/+/in'
 DEF_SUBSCRIBE_TOPIC = '/{app_name}/+/+/in'
+
+_cnt = 0
 
 class MqttBinding(Binding):
     """
@@ -77,7 +79,10 @@ class MqttBinding(Binding):
 
     @property
     def uri(self):
-        return f'mqtt://{self.auth}@{self.host}{self.port}'
+        if self.auth:
+            return f'mqtt://{self.auth}@{self.host}{self.port}'
+        else:
+            return f'mqtt://{self.host}{self.port}'
 
     async def push(self, state: State, **data):
         logger.debug(f'push {state}')
@@ -88,6 +93,7 @@ class MqttBinding(Binding):
         )
 
     async def start_binding(self) -> bool:
+        global _cnt
         await self.mqtt.connect(self.uri)
         await self.mqtt.subscribe([(self.subs_topic, mqtt_const.QOS_1)])
         logger.debug(f'{self.name} connected and suscribed to {self.subs_topic}')
@@ -95,6 +101,7 @@ class MqttBinding(Binding):
         return True
 
     @autils.endless_loop
+    @autils.set_logger(logger)
     async def _loop(self):
         msg = await self.mqtt.deliver_message()
         await self.handle_msg(msg)

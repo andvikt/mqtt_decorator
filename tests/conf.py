@@ -11,11 +11,11 @@ __name__ = 'hy'
 __skiproot__ = True
 
 
-HOST = 'm24.cloudmqtt.com'
-PORT = 14884
+HOST = '127.0.0.1'
+PORT = 1883
 
 
-mqtt_binding = MqttBinding(host=HOST, port=PORT, auth=f'{secrets.MQTT_USER}:{secrets.MQTT_PWD}')
+mqtt_binding = MqttBinding(host=HOST, port=PORT)#, auth=f'{secrets.MQTT_USER}:{secrets.MQTT_PWD}'
 mega = MegaBinding(host='192.168.0.14/sec/', port=8238, ow_port=31)
 
 grp = Group()

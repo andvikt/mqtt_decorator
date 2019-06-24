@@ -1,4 +1,4 @@
-from logging import getLogger
+from logging import getLogger, Logger
 from typing import TypeVar
 
 logger = getLogger('smarthome')

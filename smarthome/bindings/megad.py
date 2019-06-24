@@ -1,5 +1,5 @@
 from megad import Mega, Relay, Servo, SpeedSelect, OneWireBus
-from .binding import Binding
+from .binding import Binding, logger
 from .. import things
 from ..state import State
 import warnings
@@ -10,6 +10,7 @@ from asyncio_primitives import utils as autils
 
 DEF_OW_UPDATE_INTERVAL = 60
 
+logger = logger.getChild('megad')
 
 class MegaBinding(Binding):
 
@@ -61,7 +62,9 @@ class MegaBinding(Binding):
 
         # start 1-wire bus
         if self.ow_bus:
+
             @autils.endless_loop
+            @autils.set_logger(logger)
             async def update_temp():
                 await asyncio.sleep(self.ow_update_interval)
                 await self.ow_bus.update()

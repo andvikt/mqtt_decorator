@@ -2,12 +2,13 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Generic, Callable, Union
 
-from .const import _T, logger, _ThingT
+from .const import _T, logger, _ThingT, Logger
 
 import typing
 from asyncio_primitives import CustomCondition, utils as async_utils
 from .utils.proxy import LambdaProxy
 
+logger = logger.getChild('states')
 
 @dataclass(eq=False)
 class State(Generic[_T]):
